@@ -542,7 +542,27 @@ export default function App() {
     if (!socket || !tCodeInput) return;
     localStorage.setItem('mog_username', username);
     socket.emit('join_tournament', { code: tCodeInput, userData: { username, elo } });
-  };
+  }
+  // Initialize local camera with proper permission handling
+  const initLocalCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCustomError('Camera API not supported in this browser.');
+      return null;
+    }
+    if (!window.isSecureContext) {
+      setCustomError('Camera access requires HTTPS or localhost.');
+      return null;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      setLocalStream(stream);
+      return stream;
+    } catch (err) {
+      console.error('[MOG-CLIENT] Camera init error:', err);
+      setCustomError(`Camera permission denied or unavailable: ${err.message}`);
+      return null;
+    }
+  };;
 
   const startTournament = async () => {
     if (!socket || !tournament) return;

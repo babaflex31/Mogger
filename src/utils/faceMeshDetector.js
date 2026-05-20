@@ -1,5 +1,22 @@
 // MediaPipe FaceMesh wrapper and Looksmaxxing Score Engine
 
+class KalmanFilter {
+  constructor(q = 0.001, r = 0.1) {
+    this.q = q;
+    this.r = r;
+    this.x = 0;
+    this.p = 1;
+    this.k = 0;
+  }
+  update(measurement) {
+    this.p = this.p + this.q;
+    this.k = this.p / (this.p + this.r);
+    this.x = this.x + this.k * (measurement - this.x);
+    this.p = (1 - this.k) * this.p;
+    return this.x;
+  }
+}
+
 export class MogFaceDetector {
   constructor(videoElement, canvasElement, onResultsCallback) {
     this.video = videoElement;
@@ -13,7 +30,7 @@ export class MogFaceDetector {
     this.animationFrameId = null;
     this.consecutiveErrors = 0;
 
-    this.init();
+    this.scoreFilter = new KalmanFilter();
   }
 
   init() {
@@ -455,7 +472,7 @@ export class MogFaceDetector {
   calculateFinalScore(symmetry, jawline, tilt, mewing, hunterGaze, browCompactness, midfaceRatio, lipRatio, facialThirds) {
     const tiltScore = Math.min(100, Math.max(20, Math.round(((tilt + 4) / 10) * 100)));
 
-    const final = 
+    const rawFinal = 
       (symmetry * 0.15) + 
       (jawline * 0.15) + 
       (tiltScore * 0.15) + 
@@ -465,6 +482,8 @@ export class MogFaceDetector {
       (midfaceRatio * 0.10) + 
       (lipRatio * 0.05) + 
       (facialThirds * 0.05);
+
+    const smoothedFinal = this.scoreFilter.update(rawFinal);
 
     return {
       symmetry: Math.round(symmetry),
@@ -476,7 +495,7 @@ export class MogFaceDetector {
       midfaceRatio: Math.round(midfaceRatio),
       lipRatio: Math.round(lipRatio),
       facialThirds: Math.round(facialThirds),
-      finalScore: Math.round(final)
+      finalScore: Math.round(smoothedFinal)
     };
   }
 

@@ -3,10 +3,13 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// Security middleware
+app.use(helmet());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -579,4 +582,5 @@ function processMatchmaking() {
 // Start HTTP Server
 httpServer.listen(PORT, () => {
   log(`Express Signaling server running on port ${PORT}`);
+  // In development, Vite's mkcert already provides HTTPS for frontend.
 });
