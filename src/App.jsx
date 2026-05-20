@@ -16,6 +16,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 import CameraStream from './components/CameraStream';
+import TechnicalPanel from './components/TechnicalPanel';
 import { MogFaceDetector } from './utils/faceMeshDetector';
 import { MogPeer } from './utils/webrtc';
 
@@ -366,20 +367,7 @@ export default function App() {
   };
 
   // Capture Local WebCam Feed
-  const initLocalCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
-        audio: false
-      });
-      setLocalStream(stream);
-      return stream;
-    } catch (e) {
-      console.error("Camera access denied:", e);
-      alert("Mog Battle requires camera permission to analyze your face.");
-      return null;
-    }
-  };
+  // Duplicate initLocalCamera removed; using enhanced version defined later.
 
   // Start matchmaking sequence
   const startMatchmaking = async () => {
@@ -1265,6 +1253,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
+      <TechnicalPanel scores={localScores} combatType={localCombatType} />
       {/* Cyberpunk Footer Decorator */}
       <footer className="relative z-10 w-full flex flex-col md:flex-row justify-between items-center border-t border-zinc-800 pt-3 text-[9px] md:text-xs font-mono text-zinc-600 uppercase">
         <div className="flex items-center gap-2 mb-2 md:mb-0">
