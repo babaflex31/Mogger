@@ -143,6 +143,16 @@ export default function App() {
     lipRatio: 0, facialThirds: 0, finalScore: 0 
   });
   const [localCombatType, setLocalCombatType] = useState('FINAL BOSS IN TRAINING');
+
+  // Custom Room & Tournament States
+  const [customRoom, setCustomRoom] = useState(null);
+  const [customCodeInput, setCustomCodeInput] = useState('');
+  const [customError, setCustomError] = useState('');
+  const [matchDuration, setMatchDuration] = useState(10);
+  
+  const [tournament, setTournament] = useState(null);
+  const [tCodeInput, setTCodeInput] = useState('');
+  const [tError, setTError] = useState('');
   const [localFraud, setLocalFraud] = useState({ disqualified: false });
 
   // Settle Score Data for Result Screen
@@ -168,6 +178,7 @@ export default function App() {
   const localCombatTypeRef = useRef(localCombatType);
   const localFraudRef = useRef(localFraud);
   const localStreamRef = useRef(localStream);
+  const matchDurationRef = useRef(matchDuration);
 
   useEffect(() => { socketRef.current = socket; }, [socket]);
   useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
@@ -176,6 +187,7 @@ export default function App() {
   useEffect(() => { localCombatTypeRef.current = localCombatType; }, [localCombatType]);
   useEffect(() => { localFraudRef.current = localFraud; }, [localFraud]);
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
+  useEffect(() => { matchDurationRef.current = matchDuration; }, [matchDuration]);
 
   // Sound Synth Mute Toggle
   const toggleMute = () => {
@@ -201,18 +213,24 @@ export default function App() {
       console.log("[MOG-CLIENT] Connected to signaling gateway");
     });
 
-    newSocket.on('match_found', ({ roomId, role, opponent }) => {
+    newSocket.on('match_found', ({ roomId, role, opponent, customDuration }) => {
       console.log(`[MOG-CLIENT] Match found! Room: ${roomId}, Role: ${role}`);
       setRoomId(roomId);
       setPlayerRole(role);
       setOpponentInfo(opponent);
+      const dur = customDuration || 10;
+      setMatchDuration(dur);
+      matchDurationRef.current = dur;
       setScreen('BATTLE');
       setBattlePhase('WAITING_PEERS');
       newSocket.emit('join_room', { roomId });
     });
 
-    newSocket.on('battle_countdown_start', () => {
+    newSocket.on('battle_countdown_start', ({ customDuration }) => {
       setBattlePhase('COUNTDOWN');
+      const dur = customDuration || 10;
+      setMatchDuration(dur);
+      matchDurationRef.current = dur;
       runCountdown();
 
       // Initialize WebRTC Peer connection ONLY when both peers are connected and ready in room
@@ -243,7 +261,7 @@ export default function App() {
 
     newSocket.on('battle_start', () => {
       setBattlePhase('FIGHT');
-      startBattleTimer();
+      startBattleTimer(matchDurationRef.current);
     });
 
     newSocket.on('battle_result', (result) => {
@@ -272,6 +290,63 @@ export default function App() {
       alert("OPPONENT DISCONNECTED. YOU WIN BY DEFAULT!");
       cleanupBattle();
       setScreen('LOBBY');
+    });
+
+    // Custom Room Event Listeners
+    newSocket.on('custom_room_created', (roomData) => {
+      setCustomRoom(roomData);
+      setCustomError('');
+      setScreen('CUSTOM_LOBBY');
+    });
+
+    newSocket.on('custom_room_updated', (roomData) => {
+      setCustomRoom(roomData);
+      setCustomError('');
+    });
+
+    newSocket.on('custom_room_error', ({ message }) => {
+      setCustomError(message);
+      alert(message);
+    });
+
+    // Tournament Event Listeners
+    newSocket.on('tournament_created', (tData) => {
+      setTournament(tData);
+      setTError('');
+      setScreen('TOURNAMENT_LOBBY');
+    });
+
+    newSocket.on('tournament_updated', (tData) => {
+      setTournament(tData);
+      setTError('');
+    });
+
+    newSocket.on('tournament_error', ({ message }) => {
+      setTError(message);
+      alert(message);
+    });
+
+    newSocket.on('tournament_match_ready', ({ roomId, role, opponent }) => {
+      console.log(`[MOG-CLIENT] Tournament match ready! Room ${roomId}`);
+      // Teardown previous peer connection to avoid stale channels
+      if (peerRef.current) {
+        peerRef.current.close();
+        peerRef.current = null;
+      }
+      setRemoteStream(null);
+      setPeerState('new');
+
+      setRoomId(roomId);
+      setPlayerRole(role);
+      setOpponentInfo(opponent);
+      setScreen('BATTLE');
+      setBattlePhase('WAITING_PEERS');
+      newSocket.emit('join_room', { roomId });
+    });
+
+    newSocket.on('tournament_finished', ({ champion }) => {
+      alert(`TOURNAMENT COMPLETE!\n🏆 GRAND CHAMPION: ${champion.username}`);
+      cleanupBattle();
     });
 
     return () => {
@@ -386,9 +461,9 @@ export default function App() {
     }, 1000);
   };
 
-  // Active Timer counting down the 10-second looksmaxxing battle
-  const startBattleTimer = () => {
-    setFightTimer(10);
+  // Active Timer counting down the looksmaxxing battle
+  const startBattleTimer = (duration = 10) => {
+    setFightTimer(duration);
     const interval = setInterval(() => {
       setFightTimer(prev => {
         if (prev <= 1) {
@@ -421,6 +496,72 @@ export default function App() {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  // Navigation & Action Helper Methods for Custom Rooms & Tournaments
+  const enterCustomLobby = () => {
+    setScreen('CUSTOM_MENU');
+  };
+
+  const enterTournamentLobby = () => {
+    setScreen('TOURNAMENT_MENU');
+  };
+
+  const createCustomRoom = () => {
+    if (!socket) return;
+    localStorage.setItem('mog_username', username);
+    socket.emit('create_custom_room', { username, rank, elo });
+  };
+
+  const joinCustomRoom = () => {
+    if (!socket || !customCodeInput) return;
+    localStorage.setItem('mog_username', username);
+    socket.emit('join_custom_room', { code: customCodeInput, userData: { username, rank, elo } });
+  };
+
+  const updateCustomSettings = (duration) => {
+    if (!socket || !customRoom) return;
+    socket.emit('update_custom_settings', { code: customRoom.code, duration });
+  };
+
+  const startCustomBattle = async () => {
+    if (!socket || !customRoom) return;
+    const stream = await initLocalCamera();
+    if (stream) {
+      socket.emit('start_custom_battle', { code: customRoom.code });
+    }
+  };
+
+  const createTournament = () => {
+    if (!socket) return;
+    localStorage.setItem('mog_username', username);
+    socket.emit('create_tournament', { username, elo });
+  };
+
+  const joinTournament = () => {
+    if (!socket || !tCodeInput) return;
+    localStorage.setItem('mog_username', username);
+    socket.emit('join_tournament', { code: tCodeInput, userData: { username, elo } });
+  };
+
+  const startTournament = async () => {
+    if (!socket || !tournament) return;
+    const stream = await initLocalCamera();
+    if (stream) {
+      socket.emit('start_tournament', { code: tournament.code });
+    }
+  };
+
+  const leaveLobbyAndReset = () => {
+    cleanupBattle();
+    setCustomRoom(null);
+    setTournament(null);
+    setCustomCodeInput('');
+    setTCodeInput('');
+    setCustomError('');
+    setTError('');
+    setMatchDuration(10);
+    setScreen('LOBBY');
   };
 
   const cleanupBattle = () => {
@@ -556,11 +697,155 @@ export default function App() {
                 FIND MATCH
               </button>
 
+              {/* Secondary Action Buttons */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={enterCustomLobby}
+                  className="bg-dark-900 border border-zinc-700 hover:border-neon-cyan text-zinc-300 hover:text-neon-cyan font-mono py-2.5 rounded text-xs tracking-widest flex items-center justify-center gap-2 transition-all"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  CUSTOM MATCH
+                </button>
+                <button
+                  onClick={enterTournamentLobby}
+                  className="bg-dark-900 border border-zinc-700 hover:border-yellow-400 text-zinc-300 hover:text-yellow-400 font-mono py-2.5 rounded text-xs tracking-widest flex items-center justify-center gap-2 transition-all"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
+                  TOURNAMENT
+                </button>
+              </div>
+
               <div className="text-center text-[9px] text-zinc-600 font-mono uppercase tracking-widest mt-2">
                 * Camera permission required. Raw feed only.
               </div>
             </motion.div>
           )}
+/* CUSTOM MATCH LOBBY */
+{screen === 'CUSTOM_MENU' && (
+  <motion.div
+    key="custom_lobby"
+    initial={{ opacity: 0, y: 15 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -15 }}
+    className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
+  >
+    <div className="text-center">
+      <h2 className="text-xl font-black text-white tracking-widest text-neon-glow">CUSTOM MATCH</h2>
+      <p className="text-[10px] text-zinc-500 font-mono mt-1 uppercase">
+        Host a private battle or join via code.
+      </p>
+    </div>
+    {/* Create room */}
+    <div className="flex flex-col gap-2">
+      <button
+        onClick={createCustomRoom}
+        className="bg-neon-cyan hover:bg-cyan-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-cyan hover:border-white transition-all"
+      >
+        CREATE CUSTOM ROOM
+      </button>
+    </div>
+    {/* Join room */}
+    <div className="flex flex-col gap-2">
+      <input
+        type="text"
+        placeholder="Room Code"
+        value={customCodeInput}
+        onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase())}
+        className="bg-dark-900 border border-zinc-700 text-white py-1 px-2 rounded text-xs placeholder-zinc-500 focus:border-neon-cyan outline-none"
+      />
+      <button
+        onClick={joinCustomRoom}
+        className="bg-dark-900 hover:bg-zinc-800 text-zinc-300 py-2 rounded font-mono text-xs tracking-widest flex items-center justify-center gap-2 border border-zinc-700 hover:border-neon-cyan transition-all"
+      >
+        JOIN CUSTOM ROOM
+      </button>
+    </div>
+    {customError && <p className="text-neon-red text-xs">{customError}</p>}
+    {/* Settings & start */}
+    {customRoom && (
+      <div className="flex flex-col gap-2">
+        <label className="text-xs text-zinc-400">Match Duration (seconds):</label>
+        <input
+          type="number"
+          min={5}
+          max={60}
+          value={matchDuration}
+          onChange={(e) => updateCustomSettings(parseInt(e.target.value))}
+          className="bg-dark-900 border border-zinc-700 text-white py-1 px-2 rounded text-xs focus:border-neon-cyan outline-none"
+        />
+        <button
+          onClick={startCustomBattle}
+          className="bg-neon-red hover:bg-red-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-red hover:border-white transition-all"
+        >
+          START BATTLE
+        </button>
+      </div>
+    )}
+    <button
+      onClick={leaveLobbyAndReset}
+      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-1 rounded mt-2"
+    >
+      BACK TO LOBBY
+    </button>
+  </motion.div>
+)}
+
+{/* TOURNAMENT LOBBY */}
+{screen === 'TOURNAMENT_MENU' && (
+  <motion.div
+    key="tournament_lobby"
+    initial={{ opacity: 0, y: 15 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -15 }}
+    className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
+  >
+    <div className="text-center">
+      <h2 className="text-xl font-black text-white tracking-widest text-neon-glow">TOURNAMENT</h2>
+      <p className="text-[10px] text-zinc-500 font-mono mt-1 uppercase">
+        Create or join a tournament bracket.
+      </p>
+    </div>
+    {/* Create tournament */}
+    <button
+      onClick={createTournament}
+      className="bg-neon-yellow hover:bg-yellow-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-yellow hover:border-white transition-all"
+    >
+      CREATE TOURNAMENT
+    </button>
+    {/* Join tournament */}
+    <div className="flex flex-col gap-2 mt-2">
+      <input
+        type="text"
+        placeholder="Tournament Code"
+        value={tCodeInput}
+        onChange={(e) => setTCodeInput(e.target.value.toUpperCase())}
+        className="bg-dark-900 border border-zinc-700 text-white py-1 px-2 rounded text-xs placeholder-zinc-500 focus:border-neon-yellow outline-none"
+      />
+      <button
+        onClick={joinTournament}
+        className="bg-dark-900 hover:bg-zinc-800 text-zinc-300 py-2 rounded font-mono text-xs tracking-widest flex items-center justify-center gap-2 border border-zinc-700 hover:border-neon-yellow transition-all"
+      >
+        JOIN TOURNAMENT
+      </button>
+    </div>
+    {tError && <p className="text-neon-red text-xs">{tError}</p>}
+    {/* Start tournament when ready */}
+    {tournament && (
+      <button
+        onClick={startTournament}
+        className="bg-neon-red hover:bg-red-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-red hover:border-white transition-all mt-2"
+      >
+        START TOURNAMENT
+      </button>
+    )}
+    <button
+      onClick={leaveLobbyAndReset}
+      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-1 rounded mt-2"
+    >
+      BACK TO LOBBY
+    </button>
+  </motion.div>
+)}
 
           {/* 2. MATCHMAKING SCREEN */}
           {screen === 'MATCHMAKING' && (
