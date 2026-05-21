@@ -5,30 +5,54 @@ export default function CameraStream({
   stream,
   isLocal,
   canvasRef,
+  videoRef,
   scores,
   combatType,
   fraudAlerts,
   playerName
 }) {
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+  const internalVideoRef = useRef(null);
+  // Support both object refs and callback refs for video element
+  const videoRefCallback = (node) => {
+    internalVideoRef.current = node;
+    if (typeof videoRef === 'function') {
+      videoRef(node);
+    } else if (videoRef && 'current' in videoRef) {
+      videoRef.current = node;
     }
-  }, [stream]);
+    // If stream is already available, attach it if not already set to avoid redundant load requests
+    if (node && stream) {
+      if (node.srcObject !== stream) {
+        node.srcObject = stream;
+        const tryPlay = () => {
+          node.play().catch(err =>
+            console.warn('[MOG-CLIENT] Video play failed or was interrupted:', err));
+        };
+        if (node.readyState >= 2) {
+          tryPlay();
+        } else {
+          node.onloadedmetadata = tryPlay;
+        }
+      }
+    }
+  };
+
+  // Video stream handling moved to ref callback
+
 
   const hasScore = scores && scores.finalScore > 0;
+  // Stream updates are handled by the ref callback to avoid race conditions
   const isDisqualified = fraudAlerts && fraudAlerts.disqualified;
 
   return (
     <div className="relative w-full aspect-video md:aspect-[4/3] rounded-lg overflow-hidden border-2 border-zinc-800 bg-black scanlines shadow-2xl">
       {/* Video Feed */}
       <video
-        ref={videoRef}
+        ref={videoRefCallback}
         autoPlay
         playsInline
-        muted={isLocal}
+        muted={true}
+        controls
         className={`w-full h-full object-cover ${isLocal ? 'scale-x-[-1]' : ''}`}
       />
 

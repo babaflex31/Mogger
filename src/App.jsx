@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { 
   Swords, 
@@ -11,12 +11,15 @@ import {
   Flame, 
   Volume2, 
   VolumeX,
-  Smartphone
+  Smartphone,
+  Settings as SettingsIcon,
+  Crosshair as CrosshairIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import CameraStream from './components/CameraStream';
 import TechnicalPanel from './components/TechnicalPanel';
+import Settings from './components/Settings';
 import { MogFaceDetector } from './utils/faceMeshDetector';
 import { MogPeer } from './utils/webrtc';
 
@@ -131,6 +134,7 @@ export default function App() {
   const [playerRole, setPlayerRole] = useState(null); // 'player1' or 'player2'
   const [opponentInfo, setOpponentInfo] = useState(null);
   const [peerState, setPeerState] = useState('new'); // connecting, connected, disconnected
+const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Media Streams & AI Ref
   const [localStream, setLocalStream] = useState(null);
@@ -164,9 +168,18 @@ export default function App() {
   const [countdownText, setCountdownText] = useState('3');
   const [fightTimer, setFightTimer] = useState(10); // 10 second battle
 
-  // HTML Element Refs
-  const localVideoRef = useRef(null);
-  const localCanvasRef = useRef(null);
+  // HTML Element Refs and Callback States for reliable DOM binding
+  const [localVideoElement, setLocalVideoElement] = useState(null);
+  const [localCanvasElement, setLocalCanvasElement] = useState(null);
+
+  const localVideoRef = useCallback((node) => {
+    setLocalVideoElement(node);
+  }, []);
+
+  const localCanvasRef = useCallback((node) => {
+    setLocalCanvasElement(node);
+  }, []);
+
   const remoteCanvasRef = useRef(null);
   const detectorRef = useRef(null);
   const peerRef = useRef(null);
@@ -396,26 +409,55 @@ export default function App() {
     setScreen('LOBBY');
   };
 
-  // AI Detector initializer (Runs once we enter the BATTLE screen and stream is ready)
+  // Solo training functions
+  const startTraining = async () => {
+    localStorage.setItem('mog_username', username);
+    setScreen('TRAINING');
+    const stream = await initLocalCamera();
+    if (!stream) {
+      setScreen('LOBBY');
+    }
+  };
+
+  const stopTraining = () => {
+    if (detectorRef.current) {
+      detectorRef.current.stop();
+      detectorRef.current = null;
+    }
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null);
+    }
+    setScreen('LOBBY');
+  };
+
+  // Auto-acquire camera stream dynamically if missing in active assessment views
   useEffect(() => {
-    if (screen === 'BATTLE' && localStream) {
-      if (localVideoRef.current && localCanvasRef.current) {
-        localVideoRef.current.srcObject = localStream;
-        
-        console.log("[MOG-CLIENT] Starting local face analyzer");
-        detectorRef.current = new MogFaceDetector(
-          localVideoRef.current,
-          localCanvasRef.current,
-          (results) => {
-            if (results.scores) {
-              setLocalScores(results.scores);
-              setLocalCombatType(results.combatType);
-              setLocalFraud(results.fraudAlerts);
-            }
+    if ((screen === 'BATTLE' || screen === 'TRAINING') && !localStream) {
+      console.log(`[MOG-CLIENT] Screen is ${screen} but localStream is missing. Dynamically acquiring camera...`);
+      initLocalCamera();
+    }
+  }, [screen, localStream]);
+
+  // AI Detector initializer (Runs once we enter the BATTLE or TRAINING screen and stream is ready)
+  useEffect(() => {
+    if ((screen === 'BATTLE' || screen === 'TRAINING') && localStream && localVideoElement && localCanvasElement) {
+      localVideoElement.srcObject = localStream;
+      
+      console.log(`[MOG-CLIENT] Starting local face analyzer for screen: ${screen}`);
+      detectorRef.current = new MogFaceDetector(
+        localVideoElement,
+        localCanvasElement,
+        (results) => {
+          if (results.scores) {
+            setLocalScores(results.scores);
+            setLocalCombatType(results.combatType);
+            setLocalFraud(results.fraudAlerts);
           }
-        );
-        detectorRef.current.start();
-      }
+        }
+      );
+      detectorRef.current.init();
+      detectorRef.current.start();
     }
 
     return () => {
@@ -424,7 +466,7 @@ export default function App() {
         detectorRef.current = null;
       }
     };
-  }, [screen, localStream]);
+  }, [screen, localStream, localVideoElement, localCanvasElement]);
 
   // Sync Countdown Clock
   const runCountdown = () => {
@@ -634,12 +676,15 @@ export default function App() {
           >
             {isAudioMuted ? <VolumeX className="w-4 h-4 text-neon-red" /> : <Volume2 className="w-4 h-4 text-neon-cyan" />}
           </button>
+          
+          <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-neon-cyan/20 rounded-full transition-colors">
+            <SettingsIcon className="w-5 h-5 text-neon-cyan" />
+          </button>
         </div>
       </header>
-
-      {/* Invisible offscreen video element for MediaPipe feed capture */}
-      <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
-
+      {/* Settings Modal */}
+      <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      
       {/* Primary Screens */}
       <main className="relative z-10 w-full flex-grow flex items-center justify-center py-6">
         <AnimatePresence mode="wait">
@@ -705,6 +750,15 @@ export default function App() {
                 FIND MATCH
               </button>
 
+              {/* Solo Practice Arena Button */}
+              <button
+                onClick={startTraining}
+                className="w-full bg-transparent hover:bg-neon-cyan/10 text-neon-cyan font-black py-3 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-cyan hover:border-white transition-all shadow-[0_0_15px_rgba(0,240,255,0.15)]"
+              >
+                <Smartphone className="w-4 h-4 text-neon-cyan" />
+                SOLO PRACTICE ARENA
+              </button>
+
               {/* Secondary Action Buttons */}
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -728,132 +782,6 @@ export default function App() {
               </div>
             </motion.div>
           )}
-/* CUSTOM MATCH LOBBY */
-{screen === 'CUSTOM_MENU' && (
-  <motion.div
-    key="custom_lobby"
-    initial={{ opacity: 0, y: 15 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -15 }}
-    className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
-  >
-    <div className="text-center">
-      <h2 className="text-xl font-black text-white tracking-widest text-neon-glow">CUSTOM MATCH</h2>
-      <p className="text-[10px] text-zinc-500 font-mono mt-1 uppercase">
-        Host a private battle or join via code.
-      </p>
-    </div>
-    {/* Create room */}
-    <div className="flex flex-col gap-2">
-      <button
-        onClick={createCustomRoom}
-        className="bg-neon-cyan hover:bg-cyan-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-cyan hover:border-white transition-all"
-      >
-        CREATE CUSTOM ROOM
-      </button>
-    </div>
-    {/* Join room */}
-    <div className="flex flex-col gap-2">
-      <input
-        type="text"
-        placeholder="Room Code"
-        value={customCodeInput}
-        onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase())}
-        className="bg-dark-900 border border-zinc-700 text-white py-1 px-2 rounded text-xs placeholder-zinc-500 focus:border-neon-cyan outline-none"
-      />
-      <button
-        onClick={joinCustomRoom}
-        className="bg-dark-900 hover:bg-zinc-800 text-zinc-300 py-2 rounded font-mono text-xs tracking-widest flex items-center justify-center gap-2 border border-zinc-700 hover:border-neon-cyan transition-all"
-      >
-        JOIN CUSTOM ROOM
-      </button>
-    </div>
-    {customError && <p className="text-neon-red text-xs">{customError}</p>}
-    {/* Settings & start */}
-    {customRoom && (
-      <div className="flex flex-col gap-2">
-        <label className="text-xs text-zinc-400">Match Duration (seconds):</label>
-        <input
-          type="number"
-          min={5}
-          max={60}
-          value={matchDuration}
-          onChange={(e) => updateCustomSettings(parseInt(e.target.value))}
-          className="bg-dark-900 border border-zinc-700 text-white py-1 px-2 rounded text-xs focus:border-neon-cyan outline-none"
-        />
-        <button
-          onClick={startCustomBattle}
-          className="bg-neon-red hover:bg-red-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-red hover:border-white transition-all"
-        >
-          START BATTLE
-        </button>
-      </div>
-    )}
-    <button
-      onClick={leaveLobbyAndReset}
-      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-1 rounded mt-2"
-    >
-      BACK TO LOBBY
-    </button>
-  </motion.div>
-)}
-
-{/* TOURNAMENT LOBBY */}
-{screen === 'TOURNAMENT_MENU' && (
-  <motion.div
-    key="tournament_lobby"
-    initial={{ opacity: 0, y: 15 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={{ opacity: 0, y: -15 }}
-    className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
-  >
-    <div className="text-center">
-      <h2 className="text-xl font-black text-white tracking-widest text-neon-glow">TOURNAMENT</h2>
-      <p className="text-[10px] text-zinc-500 font-mono mt-1 uppercase">
-        Create or join a tournament bracket.
-      </p>
-    </div>
-    {/* Create tournament */}
-    <button
-      onClick={createTournament}
-      className="bg-neon-yellow hover:bg-yellow-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-yellow hover:border-white transition-all"
-    >
-      CREATE TOURNAMENT
-    </button>
-    {/* Join tournament */}
-    <div className="flex flex-col gap-2 mt-2">
-      <input
-        type="text"
-        placeholder="Tournament Code"
-        value={tCodeInput}
-        onChange={(e) => setTCodeInput(e.target.value.toUpperCase())}
-        className="bg-dark-900 border border-zinc-700 text-white py-1 px-2 rounded text-xs placeholder-zinc-500 focus:border-neon-yellow outline-none"
-      />
-      <button
-        onClick={joinTournament}
-        className="bg-dark-900 hover:bg-zinc-800 text-zinc-300 py-2 rounded font-mono text-xs tracking-widest flex items-center justify-center gap-2 border border-zinc-700 hover:border-neon-yellow transition-all"
-      >
-        JOIN TOURNAMENT
-      </button>
-    </div>
-    {tError && <p className="text-neon-red text-xs">{tError}</p>}
-    {/* Start tournament when ready */}
-    {tournament && (
-      <button
-        onClick={startTournament}
-        className="bg-neon-red hover:bg-red-600 text-black font-black py-2 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-red hover:border-white transition-all mt-2"
-      >
-        START TOURNAMENT
-      </button>
-    )}
-    <button
-      onClick={leaveLobbyAndReset}
-      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-1 rounded mt-2"
-    >
-      BACK TO LOBBY
-    </button>
-  </motion.div>
-)}
 
           {/* 2. MATCHMAKING SCREEN */}
           {screen === 'MATCHMAKING' && (
@@ -925,6 +853,7 @@ export default function App() {
                     stream={localStream}
                     isLocal={true}
                     canvasRef={localCanvasRef}
+                    videoRef={localVideoRef}
                     scores={localScores}
                     combatType={localCombatType}
                     fraudAlerts={localFraud}
@@ -961,7 +890,7 @@ export default function App() {
                     animate={{ opacity: 1 }}
                     className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center gap-3 rounded-lg border border-zinc-800 z-30"
                   >
-                    <Crosshair className="w-12 h-12 text-neon-red animate-spin" />
+                    <CrosshairIcon className="w-12 h-12 text-neon-red animate-spin" />
                     <h3 className="font-display text-lg font-black tracking-widest uppercase text-neon-glow">
                       ESTABLISHING PEER CHANNEL
                     </h3>
@@ -1250,10 +1179,130 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* 5. SOLO TRAINING PRACTICE SCREEN */}
+          {screen === 'TRAINING' && (
+            <motion.div 
+              key="training"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-4xl flex flex-col gap-4 relative"
+            >
+              {/* Training HUD Header */}
+              <div className="flex justify-between items-center bg-black/80 px-4 py-2 border border-zinc-800 rounded-lg backdrop-blur-sm font-mono text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500">MODE:</span>
+                  <span className="text-neon-cyan tracking-widest font-bold">SOLO PRACTICE ARENA</span>
+                </div>
+                <div className="bg-neon-cyan/10 border border-neon-cyan/30 px-3 py-1 rounded text-neon-cyan font-black flex items-center gap-1.5 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-neon-cyan" />
+                  REAL-TIME ASSESSMENT ACTIVE
+                </div>
+              </div>
+
+              {/* Dynamic Camera Grid layout for Training */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Local Feed */}
+                <div className="relative">
+                  <CameraStream
+                    stream={localStream}
+                    isLocal={true}
+                    canvasRef={localCanvasRef}
+                    videoRef={localVideoRef}
+                    scores={localScores}
+                    combatType={localCombatType}
+                    playerName={username}
+                  />
+                  <div className="absolute top-3 right-3 bg-neon-cyan text-black text-[9px] font-black px-1.5 py-0.5 rounded tracking-widest">
+                    PRACTICE FEED
+                  </div>
+                </div>
+
+                {/* Training Guide / Tips & Real-time Feedback */}
+                <div className="bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-5 flex flex-col gap-4 shadow-2xl relative min-h-[300px]">
+                  {/* Corner Sci-Fi Decorators */}
+                  <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-neon-cyan" />
+                  <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-neon-cyan" />
+
+                  <h3 className="font-display text-sm font-black text-white tracking-widest border-b border-zinc-800 pb-2 flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-neon-cyan" />
+                    AI MOG COACH FEEDBACK
+                  </h3>
+
+                  <div className="flex flex-col gap-3 font-mono text-xs text-zinc-300 flex-grow">
+                    {localScores && localScores.finalScore > 0 ? (
+                      <>
+                        <div className="bg-black/40 p-3 border border-zinc-800/80 rounded flex flex-col gap-1">
+                          <span className="text-[10px] text-zinc-500 uppercase">Current Performance Tier:</span>
+                          <span className="text-neon-cyan font-bold uppercase text-sm tracking-wider">
+                            {localCombatType || 'ANALYZING...'}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <span className="text-[10px] text-zinc-500 uppercase">Mog Coach Tips:</span>
+                          
+                          {/* Symmetry Tip */}
+                          {localScores.symmetry < 85 && (
+                            <div className="border-l-2 border-amber-500 pl-2 py-0.5">
+                              <span className="text-amber-500 font-bold">[SYMMETRY]</span> Center your face in the frame and ensure balanced side lighting.
+                            </div>
+                          )}
+                          
+                          {/* Jawline Tip */}
+                          {localScores.jawline < 82 && (
+                            <div className="border-l-2 border-amber-500 pl-2 py-0.5">
+                              <span className="text-amber-500 font-bold">[JAWLINE]</span> Clench your teeth slightly or posture your chin forward for definition.
+                            </div>
+                          )}
+                          
+                          {/* Mewing Tip */}
+                          {localScores.mewing < 85 && (
+                            <div className="border-l-2 border-neon-cyan pl-2 py-0.5">
+                              <span className="text-neon-cyan font-bold">[MEWING]</span> Press your tongue firmly against your upper palate.
+                            </div>
+                          )}
+
+                          {/* Hunter Gaze Tip */}
+                          {localScores.hunterGaze < 82 && (
+                            <div className="border-l-2 border-neon-cyan pl-2 py-0.5">
+                              <span className="text-neon-cyan font-bold">[HUNTER GAZE]</span> Relax the upper eyelids and elevate the lower lids slightly.
+                            </div>
+                          )}
+
+                          {localScores.symmetry >= 85 && localScores.jawline >= 82 && localScores.mewing >= 85 && localScores.hunterGaze >= 82 && (
+                            <div className="border-l-2 border-green-500 pl-2 py-0.5 text-green-400 font-bold animate-pulse">
+                              [ELITE FORM] Your looksmaxxing parameters are highly optimized! Keep up this posture!
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center py-6">
+                        <CrosshairIcon className="w-8 h-8 animate-spin text-neon-red" />
+                        <span className="tracking-widest text-[10px] text-zinc-400">CONNECTING VIDEO STREAM...</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={stopTraining}
+                    className="w-full bg-zinc-900 border border-zinc-800 hover:border-neon-cyan text-zinc-400 hover:text-white py-2.5 rounded text-xs font-mono tracking-widest uppercase transition-colors"
+                  >
+                    QUIT PRACTICE
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
-      <TechnicalPanel scores={localScores} combatType={localCombatType} />
+      {(screen === 'BATTLE' || screen === 'TRAINING') && (
+        <TechnicalPanel scores={localScores} combatType={localCombatType} />
+      )}
+{isSettingsOpen && <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />}
       {/* Cyberpunk Footer Decorator */}
       <footer className="relative z-10 w-full flex flex-col md:flex-row justify-between items-center border-t border-zinc-800 pt-3 text-[9px] md:text-xs font-mono text-zinc-600 uppercase">
         <div className="flex items-center gap-2 mb-2 md:mb-0">
@@ -1262,7 +1311,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4">
           <span>SECURE_SHA256 // ENCRYPTED_SCORES</span>
-          <span className="text-neon-cyan hidden md:inline">BY ANTIGRAVITY</span>
+          <span className="text-neon-cyan hidden md:inline">BY BABAFLEX31</span>
         </div>
       </footer>
     </div>
