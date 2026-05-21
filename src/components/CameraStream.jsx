@@ -20,24 +20,33 @@ export default function CameraStream({
     } else if (videoRef && 'current' in videoRef) {
       videoRef.current = node;
     }
-    // If stream is already available, attach it if not already set to avoid redundant load requests
-    if (node && stream) {
-      if (node.srcObject !== stream) {
-        node.srcObject = stream;
-        const tryPlay = () => {
-          node.play().catch(err =>
-            console.warn('[MOG-CLIENT] Video play failed or was interrupted:', err));
-        };
-        if (node.readyState >= 2) {
-          tryPlay();
-        } else {
-          node.onloadedmetadata = tryPlay;
-        }
-      }
-    }
+    // No longer handle stream here; useEffect will manage srcObject and playback.
   };
 
-  // Video stream handling moved to ref callback
+  // Set up stream handling effect
+  useEffect(() => {
+    const videoElem = internalVideoRef.current;
+    if (!videoElem || !stream) return;
+    if (videoElem.srcObject !== stream) {
+      videoElem.srcObject = stream;
+      const tryPlay = () => {
+        videoElem.play().catch(err =>
+          console.warn('[MOG-CLIENT] Video play failed or was interrupted:', err));
+      };
+      if (videoElem.readyState >= 2) {
+        tryPlay();
+      } else {
+        videoElem.onloadedmetadata = tryPlay;
+      }
+    }
+    // Cleanup on unmount or stream change
+    return () => {
+      if (videoElem) {
+        videoElem.pause();
+        videoElem.onloadedmetadata = null;
+      }
+    };
+  }, [stream]);
 
 
   const hasScore = scores && scores.finalScore > 0;
