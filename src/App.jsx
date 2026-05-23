@@ -482,6 +482,13 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     setScreen('LOBBY');
   };
 
+  // Ensure localStream is passed to peer when it changes or becomes available later
+  useEffect(() => {
+    if (peerRef.current && localStream) {
+      peerRef.current.setLocalStream(localStream);
+    }
+  }, [localStream]);
+
   // Auto-acquire camera stream dynamically if missing in active assessment views
   useEffect(() => {
     if ((screen === 'BATTLE' || screen === 'TRAINING') && !localStream) {
@@ -1061,7 +1068,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                 </div>
                 <div className="bg-neon-red/10 border border-neon-red/30 px-3 py-1 rounded text-neon-red font-black flex items-center gap-1.5 animate-pulse">
                   <span className="w-1.5 h-1.5 rounded-full bg-neon-red" />
-                  RTC STABLE // P2P CONNECTED
+                  {t('rtc_stable', 'RTC STABLE // P2P CONNECTED')}
                 </div>
               </div>
 
@@ -1385,15 +1392,15 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                   className="flex-1 bg-neon-red hover:bg-red-600 text-black font-black py-3 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 transition-all shadow-[0_0_15px_rgba(255,0,60,0.2)]"
                 >
                   <RotateCcw className="w-4 h-4" />
-                  MOG AGAIN
+                  {t("mog_again")}
                 </button>
 
                 <button
-                  onClick={() => alert("AUTO-GENERATING TIKTOK EDIT CLIP...\nRemotion worker initialized in background.")}
+                  onClick={() => alert(t("auto_generating_clip"))}
                   className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-neon-cyan text-white font-black py-3 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 transition-all"
                 >
                   <Share2 className="w-4 h-4 text-neon-cyan" />
-                  EXPORT CLIPS
+                  {t("export_clips")}
                 </button>
               </div>
             </motion.div>
@@ -1465,34 +1472,34 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                           {/* Symmetry Tip */}
                           {localScores.symmetry < 85 && (
                             <div className="border-l-2 border-amber-500 pl-2 py-0.5">
-                              <span className="text-amber-500 font-bold">[SYMMETRY]</span> Center your face in the frame and ensure balanced side lighting.
+                              <span className="text-amber-500 font-bold">[SYMMETRY]</span> {t("tip_symmetry")}
                             </div>
                           )}
                           
                           {/* Jawline Tip */}
                           {localScores.jawline < 82 && (
                             <div className="border-l-2 border-amber-500 pl-2 py-0.5">
-                              <span className="text-amber-500 font-bold">[JAWLINE]</span> Clench your teeth slightly or posture your chin forward for definition.
+                              <span className="text-amber-500 font-bold">[JAWLINE]</span> {t("tip_jawline")}
                             </div>
                           )}
                           
                           {/* Mewing Tip */}
                           {localScores.mewing < 85 && (
                             <div className="border-l-2 border-neon-cyan pl-2 py-0.5">
-                              <span className="text-neon-cyan font-bold">[MEWING]</span> Press your tongue firmly against your upper palate.
+                              <span className="text-neon-cyan font-bold">[MEWING]</span> {t("tip_mewing")}
                             </div>
                           )}
 
                           {/* Hunter Gaze Tip */}
                           {localScores.hunterGaze < 82 && (
                             <div className="border-l-2 border-neon-cyan pl-2 py-0.5">
-                              <span className="text-neon-cyan font-bold">[HUNTER GAZE]</span> Relax the upper eyelids and elevate the lower lids slightly.
+                              <span className="text-neon-cyan font-bold">[HUNTER GAZE]</span> {t("tip_hunter_gaze")}
                             </div>
                           )}
 
                           {localScores.symmetry >= 85 && localScores.jawline >= 82 && localScores.mewing >= 85 && localScores.hunterGaze >= 82 && (
                             <div className="border-l-2 border-green-500 pl-2 py-0.5 text-green-400 font-bold animate-pulse">
-                              [ELITE FORM] Your looksmaxxing parameters are highly optimized! Keep up this posture!
+                              {t("perfect_score")}
                             </div>
                           )}
                         </div>

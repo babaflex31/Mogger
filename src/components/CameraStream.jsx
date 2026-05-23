@@ -230,4 +230,4 @@ function CameraStream({
   );
 }
 
-export default CameraStream;
+export default memo(CameraStream);

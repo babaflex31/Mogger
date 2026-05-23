@@ -49,4 +49,4 @@ function TechnicalPanel({ scores, combatType }) {
   );
 }
 
-export default TechnicalPanel;
+export default memo(TechnicalPanel);

@@ -93,7 +93,23 @@ const resources = {
     "fraud_filter": "FILTER USAGE // NATURAL STATE ONLY",
     "fraud_warning": "WARNING: MOG DISQUALIFICATION ACTIVE",
     "local_stream_angle": "LOCAL STREAM // ANGLE_CHECK",
-    "opponent": "OPPONENT"
+    "opponent": "OPPONENT",
+    "establishing_peer": "ESTABLISHING PEER CHANNEL",
+    "syncing_cameras": "Syncing cameras and initializing AI detector models...",
+    "battle_begins_in": "MOG BATTLE BEGINS IN",
+    "stretch_muscles": "STRETCH THOSE MUSCLES",
+    "time_remaining": "MOG TIME REMAINING:",
+    "practice_feed": "PRACTICE FEED",
+    "analyzing": "ANALYZING...",
+    "tip_symmetry": "Center your face in the frame and ensure balanced side lighting.",
+    "tip_jawline": "Clench your teeth slightly or posture your chin forward for definition.",
+    "tip_mewing": "Press your tongue firmly against your upper palate.",
+    "tip_hunter_gaze": "Relax the upper eyelids and elevate the lower lids slightly.",
+    "perfect_score": "ELITE FORM! Your looksmaxxing parameters are highly optimized! Keep up this posture!",
+    "rtc_stable": "RTC STABLE // P2P CONNECTED",
+    "mog_again": "MOG AGAIN",
+    "export_clips": "EXPORT CLIPS",
+    "auto_generating_clip": "AUTO-GENERATING TIKTOK EDIT CLIP...\\nRemotion worker initialized in background."
     }
   },
   tr: {
@@ -186,7 +202,23 @@ const resources = {
       "fraud_filter": "FİLTRE KULLANIMI // SADECE DOĞAL HAL",
       "fraud_warning": "UYARI: MOG DİSKALİFİYESİ AKTİF",
       "local_stream_angle": "YEREL YAYIN // AÇI_KONTROLÜ",
-      "opponent": "RAKİP"
+      "opponent": "RAKİP",
+      "establishing_peer": "EŞLEŞME BAĞLANTISI KURULUYOR",
+      "syncing_cameras": "Kameralar senkronize ediliyor ve Yapay Zeka modelleri başlatılıyor...",
+      "battle_begins_in": "MOG SAVAŞI BAŞLIYOR",
+      "stretch_muscles": "KASLARINI ESNET",
+      "time_remaining": "KALAN SÜRE:",
+      "practice_feed": "PRATİK AKIŞI",
+      "analyzing": "ANALİZ EDİLİYOR...",
+      "tip_symmetry": "Yüzünüzü kadraja ortalayın ve yan ışıkların dengeli olduğundan emin olun.",
+      "tip_jawline": "Çenenizi daha belirgin hale getirmek için dişlerinizi hafifçe sıkın veya çenenizi öne çıkarın.",
+      "tip_mewing": "Dilinizi üst damağınıza sıkıca bastırın.",
+      "tip_hunter_gaze": "Alt göz kapaklarınızı hafifçe yukarı çekerek (squinch) bakışınızı odaklayın.",
+      "perfect_score": "KUSURSUZ! Yüz hatlarınız optimum MOG seviyesinde! Bu duruşu koruyun!",
+      "rtc_stable": "RTC SABİT // P2P BAĞLANDI",
+      "mog_again": "TEKRAR MOGLA",
+      "export_clips": "KLİPLERİ DIŞA AKTAR",
+      "auto_generating_clip": "TİKTOK KLİBİ OTOMATİK OLUŞTURULUYOR...\\nArkaplanda Remotion motoru başlatıldı."
     }
   }
 };

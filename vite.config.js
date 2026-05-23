@@ -4,7 +4,7 @@ import mkcert from 'vite-plugin-mkcert'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), mkcert()],
+  plugins: [react(), ...(process.env.NODE_ENV === 'test' ? [] : [mkcert()])],
   server: {
     port: 5173,
     host: true, // Listen on all network interfaces
