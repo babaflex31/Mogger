@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback, memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ShieldAlert, Crosshair, Sparkles } from 'lucide-react';
 
-export default function CameraStream({
+function CameraStream({
   stream,
   isLocal,
   canvasRef,
@@ -11,17 +12,17 @@ export default function CameraStream({
   fraudAlerts,
   playerName
 }) {
+  const { t } = useTranslation();
   const internalVideoRef = useRef(null);
   // Support both object refs and callback refs for video element
-  const videoRefCallback = (node) => {
+  const videoRefCallback = useCallback((node) => {
     internalVideoRef.current = node;
     if (typeof videoRef === 'function') {
       videoRef(node);
     } else if (videoRef && 'current' in videoRef) {
       videoRef.current = node;
     }
-    // No longer handle stream here; useEffect will manage srcObject and playback.
-  };
+  }, [videoRef]);
 
   // Set up stream handling effect
   useEffect(() => {
@@ -54,7 +55,7 @@ export default function CameraStream({
   const isDisqualified = fraudAlerts && fraudAlerts.disqualified;
 
   return (
-    <div className="relative w-full aspect-video md:aspect-[4/3] rounded-lg overflow-hidden border-2 border-zinc-800 bg-black scanlines shadow-2xl">
+    <div className="relative w-full aspect-[3/4] md:aspect-[16/10] max-h-[75vh] rounded-lg overflow-hidden border-2 border-zinc-800 bg-black scanlines shadow-2xl">
       {/* Video Feed */}
       <video
         ref={videoRefCallback}
@@ -74,7 +75,7 @@ export default function CameraStream({
       {/* Cyber Overlay Details */}
       <div className="absolute top-3 left-3 bg-black/75 px-3 py-1 text-xs border border-neon-red/40 rounded flex items-center gap-2 font-mono uppercase tracking-widest text-neon-red shadow-lg crt-flicker">
         <span className="w-2 h-2 rounded-full bg-neon-red animate-pulse" />
-        {isLocal ? 'LOCAL FEED // ANGLE_CHECKER' : `PEER: ${playerName || 'OPPONENT'}`}
+        {isLocal ? t('local_stream_angle') || 'YEREL YAYIN // AÇI_KONTROLÜ' : `${t('opponent') || 'RAKİP'}: ${playerName || t('opponent') || 'RAKİP'}`}
       </div>
 
       {/* Active Battle Score HUD */}
@@ -96,7 +97,7 @@ export default function CameraStream({
             {/* Canthal Tilt */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>CANTHAL TILT:</span>
+                <span>{t('canthal_tilt_t', 'GÖZ AÇISI (TILT)')}:</span>
                 <span className={scores.canthalTilt >= 0 ? 'text-neon-cyan' : 'text-neon-red'}>
                   {scores.canthalTilt >= 0 ? '+' : ''}{scores.canthalTilt}°
                 </span>
@@ -112,7 +113,7 @@ export default function CameraStream({
             {/* Symmetry */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>SYMMETRY:</span>
+                <span>{t('symmetry_t', 'SİMETRİ')}:</span>
                 <span className="text-neon-cyan">{scores.symmetry}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -123,7 +124,7 @@ export default function CameraStream({
             {/* Jawline */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>JAWLINE:</span>
+                <span>{t('jawline_t', 'ÇENE (JAWLINE)')}:</span>
                 <span className="text-neon-cyan">{scores.jawline}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -134,7 +135,7 @@ export default function CameraStream({
             {/* Mewing */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>MEWING:</span>
+                <span>{t('mewing_t', 'MEWING')}:</span>
                 <span className="text-neon-cyan">{scores.mewing}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -145,7 +146,7 @@ export default function CameraStream({
             {/* Hunter Gaze */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>HUNTER GAZE:</span>
+                <span>{t('hunter_gaze_t', 'AVCI BAKIŞI')}:</span>
                 <span className="text-neon-cyan">{scores.hunterGaze || 0}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -156,7 +157,7 @@ export default function CameraStream({
             {/* Brow Compactness */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>BROW COMPACT:</span>
+                <span>{t('brow_compactness_t', 'KAŞ YAKINLIĞI')}:</span>
                 <span className="text-neon-cyan">{scores.browCompactness || 0}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -167,7 +168,7 @@ export default function CameraStream({
             {/* Midface Ratio */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>MIDFACE RATIO:</span>
+                <span>{t('midface_ratio_t', 'ORTA YÜZ (MIDFACE)')}:</span>
                 <span className="text-neon-cyan">{scores.midfaceRatio || 0}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -178,7 +179,7 @@ export default function CameraStream({
             {/* Lip Ratio */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>LIPS/NOSE RATIO:</span>
+                <span>{t('lip_ratio_t', 'DUDAK/BURUN ORANI')}:</span>
                 <span className="text-neon-cyan">{scores.lipRatio || 0}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -189,7 +190,7 @@ export default function CameraStream({
             {/* Facial Thirds */}
             <div className="flex flex-col gap-0.5">
               <div className="flex justify-between font-bold">
-                <span>FACIAL THIRDS:</span>
+                <span>{t('facial_thirds_t', 'YÜZÜN ÜÇTE BİRİ')}:</span>
                 <span className="text-neon-cyan">{scores.facialThirds || 0}%</span>
               </div>
               <div className="w-full h-1 bg-zinc-900 rounded overflow-hidden">
@@ -205,15 +206,15 @@ export default function CameraStream({
         <div className="absolute inset-0 bg-red-950/80 border-4 border-neon-red flex flex-col justify-center items-center gap-3 p-4 animate-pulse">
           <ShieldAlert className="w-16 h-16 text-neon-red animate-bounce" />
           <div className="text-center font-display">
-            <h3 className="text-xl font-black text-neon-red tracking-widest glitch-text" data-text="FRAUD DETECTED">
-              FRAUD DETECTED
+            <h3 className="text-xl font-black text-neon-red tracking-widest glitch-text" data-text={t('fraud_detected', 'HİLE TESPİT EDİLDİ')}>
+              {t('fraud_detected', 'HİLE TESPİT EDİLDİ')}
             </h3>
             <p className="text-xs text-white/80 font-mono mt-1 uppercase">
-              {fraudAlerts.angleAbuse ? 'ANGLE MERCHANT // RE-ALIGN REQUIRED' : 'FILTER ABUSE // RAW ONLY'}
+              {fraudAlerts.angleAbuse ? t('fraud_angle', 'AÇI HİLESİ // YENİDEN HİZALAMA GEREKLİ') : t('fraud_filter', 'FİLTRE KULLANIMI // SADECE DOĞAL HAL')}
             </p>
           </div>
           <div className="bg-black text-neon-red border border-neon-red font-mono px-3 py-1 text-[10px] rounded mt-2 uppercase tracking-wide">
-            WARNING: MOG DISQUALIFICATION ACTIVE
+            {t('fraud_warning', 'UYARI: MOG DİSKALİFİYESİ AKTİF')}
           </div>
         </div>
       )}
@@ -222,7 +223,7 @@ export default function CameraStream({
       {!stream && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950 text-zinc-500 font-mono text-sm gap-2">
           <Crosshair className="w-8 h-8 animate-spin text-neon-red" />
-          <span className="tracking-widest text-[10px] text-zinc-400">CONNECTING VIDEO STREAM...</span>
+          <span className="tracking-widest text-[10px] text-zinc-400">{t('connecting_video', 'VİDEO AKIŞI BAĞLANIYOR...')}</span>
         </div>
       )}
     </div>

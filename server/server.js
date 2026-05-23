@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
+import { CONFIG } from '../src/config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -52,8 +53,8 @@ function advanceTournamentRound(tourney) {
     rooms.set(finalsMatchId, {
       roomId: finalsMatchId,
       state: 'WAITING',
-      player1: { socketId: semi1Winner.socketId, username: semi1Winner.username, elo: semi1Winner.elo, joined: false, ready: false, score: 0, scoreSubmitted: false },
-      player2: { socketId: semi2Winner.socketId, username: semi2Winner.username, elo: semi2Winner.elo, joined: false, ready: false, score: 0, scoreSubmitted: false }
+      player1: { socketId: semi1Winner.socketId, username: semi1Winner.username, elo: semi1Winner.elo, joined: false, peerConnected: false, ready: false, score: 0, scoreSubmitted: false },
+      player2: { socketId: semi2Winner.socketId, username: semi2Winner.username, elo: semi2Winner.elo, joined: false, peerConnected: false, ready: false, score: 0, scoreSubmitted: false }
     });
     
     // Direct finalist sockets to join room
@@ -116,14 +117,37 @@ io.on('connection', (socket) => {
       room.player2.joined = true;
     }
 
-    // When both are joined, start the game countdown sync
-    if (room.player1.joined && room.player2.joined && room.state === 'WAITING') {
+    // Set a fallback timeout: if peer_connected takes too long, force start countdown anyway
+    if (room.player1.joined && room.player2.joined && room.state === 'WAITING' && !room.countdownTimer) {
+      room.countdownTimer = setTimeout(() => {
+        if (room.state === 'WAITING') {
+          room.state = 'COUNTDOWN';
+          log(`Room ${roomId} fallback timeout reached, forcing countdown`);
+          io.to(roomId).emit('battle_countdown_start', {
+            player1: room.player1,
+            player2: room.player2,
+            customDuration: room.duration || CONFIG.DEFAULT_MATCH_DURATION
+          });
+        }
+      }, 5000); // Wait max 5 seconds for WebRTC
+    }
+  });
+
+  socket.on('peer_connected', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    
+    if (room.player1.socketId === socket.id) room.player1.peerConnected = true;
+    else if (room.player2.socketId === socket.id) room.player2.peerConnected = true;
+
+    if (room.player1.peerConnected && room.player2.peerConnected && room.state === 'WAITING') {
+      if (room.countdownTimer) clearTimeout(room.countdownTimer);
       room.state = 'COUNTDOWN';
-      log(`Room ${roomId} both players joined, starting countdown`);
+      log(`Room ${roomId} WebRTC both connected, starting countdown`);
       io.to(roomId).emit('battle_countdown_start', {
         player1: room.player1,
         player2: room.player2,
-        customDuration: room.duration || 10
+        customDuration: room.duration || CONFIG.DEFAULT_MATCH_DURATION
       });
     }
   });
@@ -210,7 +234,7 @@ io.on('connection', (socket) => {
           details: room.player1.details,
           combatType: room.player1.combatType,
           fraudAlerts: room.player1.fraudAlerts,
-          eloChange: winnerSocketId === room.player1.socketId ? 25 : (winnerSocketId === null ? 0 : -20)
+          eloChange: winnerSocketId === room.player1.socketId ? CONFIG.ELO_GAIN : (winnerSocketId === null ? 0 : CONFIG.ELO_LOSS)
         },
         player2: {
           socketId: room.player2.socketId,
@@ -219,7 +243,7 @@ io.on('connection', (socket) => {
           details: room.player2.details,
           combatType: room.player2.combatType,
           fraudAlerts: room.player2.fraudAlerts,
-          eloChange: winnerSocketId === room.player2.socketId ? 25 : (winnerSocketId === null ? 0 : -20)
+          eloChange: winnerSocketId === room.player2.socketId ? CONFIG.ELO_GAIN : (winnerSocketId === null ? 0 : CONFIG.ELO_LOSS)
         }
       };
 
@@ -362,7 +386,7 @@ io.on('connection', (socket) => {
       code: roomCode,
       hostId: socket.id,
       players: [{ socketId: socket.id, username: userData.username || 'Host', rank: userData.rank || 'GYMCEL', elo: userData.elo || 1000 }],
-      duration: 10,
+      duration: CONFIG.DEFAULT_MATCH_DURATION,
       state: 'LOBBY'
     };
     customRooms.set(roomCode, customRoom);
@@ -397,7 +421,7 @@ io.on('connection', (socket) => {
     const rCode = code?.toUpperCase();
     const customRoom = customRooms.get(rCode);
     if (customRoom && customRoom.hostId === socket.id) {
-      customRoom.duration = parseInt(duration) || 10;
+      customRoom.duration = parseInt(duration) || CONFIG.DEFAULT_MATCH_DURATION;
       io.to(rCode).emit('custom_room_updated', customRoom);
       log(`Custom Room ${rCode} updated duration to ${duration}`);
     }
@@ -416,8 +440,8 @@ io.on('connection', (socket) => {
         roomId: battleRoomId,
         state: 'WAITING',
         duration: customRoom.duration,
-        player1: { ...player1, joined: false, ready: false, score: 0, scoreSubmitted: false, details: null, combatType: '' },
-        player2: { ...player2, joined: false, ready: false, score: 0, scoreSubmitted: false, details: null, combatType: '' }
+        player1: { ...player1, joined: false, peerConnected: false, ready: false, score: 0, scoreSubmitted: false, details: null, combatType: '' },
+        player2: { ...player2, joined: false, peerConnected: false, ready: false, score: 0, scoreSubmitted: false, details: null, combatType: '' }
       };
       
       rooms.set(battleRoomId, roomState);
@@ -514,9 +538,9 @@ io.on('connection', (socket) => {
       rooms.set(m.id, {
         roomId: m.id,
         state: 'WAITING',
-        duration: 10,
-        player1: { socketId: m.p1.socketId, username: m.p1.username, elo: m.p1.elo, joined: false, ready: false, score: 0, scoreSubmitted: false },
-        player2: { socketId: m.p2.socketId, username: m.p2.username, elo: m.p2.elo, joined: false, ready: false, score: 0, scoreSubmitted: false }
+        duration: CONFIG.DEFAULT_MATCH_DURATION,
+        player1: { socketId: m.p1.socketId, username: m.p1.username, elo: m.p1.elo, joined: false, peerConnected: false, ready: false, score: 0, scoreSubmitted: false },
+        player2: { socketId: m.p2.socketId, username: m.p2.username, elo: m.p2.elo, joined: false, peerConnected: false, ready: false, score: 0, scoreSubmitted: false }
       });
 
       // Direct player client actions
@@ -545,6 +569,7 @@ function processMatchmaking() {
     player1: {
       ...player1,
       joined: false,
+      peerConnected: false,
       ready: false,
       score: 0,
       scoreSubmitted: false,
@@ -554,6 +579,7 @@ function processMatchmaking() {
     player2: {
       ...player2,
       joined: false,
+      peerConnected: false,
       ready: false,
       score: 0,
       scoreSubmitted: false,

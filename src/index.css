@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global scaling for UI readability */
+html { font-size: 14px; }
+
+/* Enlarge ultra‑small text utilities */
+.text-xs, .text-[9px] { font-size: 0.85rem; }
+
 @layer base {
   body {
     background-color: #050505;

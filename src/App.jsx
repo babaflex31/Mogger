@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
+import { CONFIG } from './config.js';
 import { 
   Swords, 
   User, 
@@ -117,6 +119,21 @@ class MogSynth {
 const synth = new MogSynth();
 
 export default function App() {
+  const { t } = useTranslation();
+
+  // Replace hardcoded UI strings with translation keys
+  const arenaTitle = t('enter_arena');
+  const arenaSubtitle = t('arena_subtitle');
+  const findMatchBtn = t('find_match');
+  const soloPracticeBtn = t('solo_practice_arena');
+  const customMatchBtn = t('custom_match');
+  const tournamentBtn = t('tournament');
+  const cancelQueueBtn = t('cancel_queue');
+  const matchmakingActive = t('matchmaking_active');
+  const searchingOpponent = t('searching_opponent');
+  const queueTimeLabel = t('queue_time');
+  const eloRangeLabel = t('elo_range');
+
   // Navigation & States
   const [screen, setScreen] = useState('LOBBY'); // LOBBY, MATCHMAKING, BATTLE, RESULT
   const [username, setUsername] = useState(() => {
@@ -153,7 +170,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [customRoom, setCustomRoom] = useState(null);
   const [customCodeInput, setCustomCodeInput] = useState('');
   const [customError, setCustomError] = useState('');
-  const [matchDuration, setMatchDuration] = useState(10);
+  const [matchDuration, setMatchDuration] = useState(CONFIG.DEFAULT_MATCH_DURATION);
   
   const [tournament, setTournament] = useState(null);
   const [tCodeInput, setTCodeInput] = useState('');
@@ -166,7 +183,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // UI States for Battle Phase
   const [battlePhase, setBattlePhase] = useState('WAITING_PEERS'); // WAITING_PEERS, COUNTDOWN, FIGHT, RESOLVING
   const [countdownText, setCountdownText] = useState('3');
-  const [fightTimer, setFightTimer] = useState(10); // 10 second battle
+  const [fightTimer, setFightTimer] = useState(CONFIG.DEFAULT_MATCH_DURATION); // battle duration
 
   // HTML Element Refs and Callback States for reliable DOM binding
   const [localVideoElement, setLocalVideoElement] = useState(null);
@@ -238,6 +255,34 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
       setScreen('BATTLE');
       setBattlePhase('WAITING_PEERS');
       newSocket.emit('join_room', { roomId });
+
+      // Initialize WebRTC Peer connection immediately so video is ready before countdown
+      const isInitiator = role === 'player1';
+      console.log(`[MOG-CLIENT] Initializing WebRTC. Initiator: ${isInitiator}, Room: ${roomId}`);
+      
+      if (peerRef.current) {
+        peerRef.current.close();
+      }
+
+      peerRef.current = new MogPeer(
+        newSocket,
+        roomId,
+        isInitiator,
+        (remoteMediaStream) => {
+          console.log("[MOG-CLIENT] Attaching remote stream");
+          setRemoteStream(remoteMediaStream);
+        },
+        (connectionState) => {
+          setPeerState(connectionState);
+          if (connectionState === 'connected') {
+            newSocket.emit('peer_connected', { roomId });
+          }
+        }
+      );
+
+      if (localStreamRef.current) {
+        peerRef.current.setLocalStream(localStreamRef.current);
+      }
     });
 
     newSocket.on('battle_countdown_start', ({ customDuration }) => {
@@ -246,31 +291,6 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
       setMatchDuration(dur);
       matchDurationRef.current = dur;
       runCountdown();
-
-      // Initialize WebRTC Peer connection ONLY when both peers are connected and ready in room
-      const isInitiator = playerRoleRef.current === 'player1';
-      console.log(`[MOG-CLIENT] Initializing WebRTC. Initiator: ${isInitiator}, Room: ${roomIdRef.current}`);
-      
-      if (peerRef.current) {
-        peerRef.current.close();
-      }
-
-      peerRef.current = new MogPeer(
-        newSocket,
-        roomIdRef.current,
-        isInitiator,
-        (remoteMediaStream) => {
-          console.log("[MOG-CLIENT] Attaching remote stream");
-          setRemoteStream(remoteMediaStream);
-        },
-        (connectionState) => {
-          setPeerState(connectionState);
-        }
-      );
-
-      if (localStreamRef.current) {
-        peerRef.current.setLocalStream(localStreamRef.current);
-      }
     });
 
     newSocket.on('battle_start', () => {
@@ -316,6 +336,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     newSocket.on('custom_room_updated', (roomData) => {
       setCustomRoom(roomData);
       setCustomError('');
+      setScreen(prev => prev === 'CUSTOM_MENU' ? 'CUSTOM_LOBBY' : prev);
     });
 
     newSocket.on('custom_room_error', ({ message }) => {
@@ -333,6 +354,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     newSocket.on('tournament_updated', (tData) => {
       setTournament(tData);
       setTError('');
+      setScreen(prev => prev === 'TOURNAMENT_MENU' ? 'TOURNAMENT_LOBBY' : prev);
     });
 
     newSocket.on('tournament_error', ({ message }) => {
@@ -356,6 +378,34 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
       setScreen('BATTLE');
       setBattlePhase('WAITING_PEERS');
       newSocket.emit('join_room', { roomId });
+
+      // Initialize WebRTC Peer connection immediately for tournament
+      const isInitiator = role === 'player1';
+      console.log(`[MOG-CLIENT] Initializing WebRTC for Tournament. Initiator: ${isInitiator}, Room: ${roomId}`);
+      
+      if (peerRef.current) {
+        peerRef.current.close();
+      }
+
+      peerRef.current = new MogPeer(
+        newSocket,
+        roomId,
+        isInitiator,
+        (remoteMediaStream) => {
+          console.log("[MOG-CLIENT] Attaching remote stream (Tournament)");
+          setRemoteStream(remoteMediaStream);
+        },
+        (connectionState) => {
+          setPeerState(connectionState);
+          if (connectionState === 'connected') {
+            newSocket.emit('peer_connected', { roomId });
+          }
+        }
+      );
+
+      if (localStreamRef.current) {
+        peerRef.current.setLocalStream(localStreamRef.current);
+      }
     });
 
     newSocket.on('tournament_finished', ({ champion }) => {
@@ -492,7 +542,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   };
 
   // Active Timer counting down the looksmaxxing battle
-  const startBattleTimer = (duration = 10) => {
+  const startBattleTimer = (duration = CONFIG.DEFAULT_MATCH_DURATION) => {
     setFightTimer(duration);
     const interval = setInterval(() => {
       setFightTimer(prev => {
@@ -501,7 +551,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
           
           const finalPayload = {
             roomId: roomIdRef.current,
-            scores: (detectorRef.current && detectorRef.current.active)
+            scores: (detectorRef.current && detectorRef.current.active && localScoresRef.current)
               ? localScoresRef.current
               : { 
                   symmetry: 78, 
@@ -576,11 +626,11 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Initialize local camera with proper permission handling
   const initLocalCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCustomError('Camera API not supported in this browser.');
+      setCustomError(t('camera_not_supported', 'Camera API not supported in this browser.'));
       return null;
     }
     if (!window.isSecureContext) {
-      setCustomError('Camera access requires HTTPS or localhost.');
+      setCustomError(t('camera_https_required', 'Camera access requires HTTPS or localhost.'));
       return null;
     }
     try {
@@ -589,7 +639,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
       return stream;
     } catch (err) {
       console.error('[MOG-CLIENT] Camera init error:', err);
-      setCustomError(`Camera permission denied or unavailable: ${err.message}`);
+      setCustomError(t('camera_permission_denied', 'Camera permission denied or unavailable: ') + err.message);
       return null;
     }
   };;
@@ -610,7 +660,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     setTCodeInput('');
     setCustomError('');
     setTError('');
-    setMatchDuration(10);
+    setMatchDuration(CONFIG.DEFAULT_MATCH_DURATION);
     setScreen('LOBBY');
   };
 
@@ -704,10 +754,10 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
               <div className="text-center">
                 <h2 className="text-xl font-black text-white tracking-widest text-neon-glow flex justify-center items-center gap-2">
-                  ENTER THE ARENA
+                  {arenaTitle}
                 </h2>
                 <p className="text-[10px] text-zinc-500 font-mono mt-1 uppercase">
-                  Adjust your posture, prepare your gaze, defeat peers.
+                  {arenaSubtitle}
                 </p>
               </div>
 
@@ -747,7 +797,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                 className="w-full bg-neon-red hover:bg-red-600 text-black font-black py-3 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-red hover:border-white transition-all shadow-[0_0_15px_rgba(255,0,60,0.3)]"
               >
                 <Play className="w-4 h-4 fill-black" />
-                FIND MATCH
+                {findMatchBtn}
               </button>
 
               {/* Solo Practice Arena Button */}
@@ -756,7 +806,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                 className="w-full bg-transparent hover:bg-neon-cyan/10 text-neon-cyan font-black py-3 rounded tracking-widest font-display text-sm flex items-center justify-center gap-2 border border-neon-cyan hover:border-white transition-all shadow-[0_0_15px_rgba(0,240,255,0.15)]"
               >
                 <Smartphone className="w-4 h-4 text-neon-cyan" />
-                SOLO PRACTICE ARENA
+                {soloPracticeBtn}
               </button>
 
               {/* Secondary Action Buttons */}
@@ -766,14 +816,14 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                   className="bg-dark-900 border border-zinc-700 hover:border-neon-cyan text-zinc-300 hover:text-neon-cyan font-mono py-2.5 rounded text-xs tracking-widest flex items-center justify-center gap-2 transition-all"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                  CUSTOM MATCH
+                  {customMatchBtn}
                 </button>
                 <button
                   onClick={enterTournamentLobby}
                   className="bg-dark-900 border border-zinc-700 hover:border-yellow-400 text-zinc-300 hover:text-yellow-400 font-mono py-2.5 rounded text-xs tracking-widest flex items-center justify-center gap-2 transition-all"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
-                  TOURNAMENT
+                  {tournamentBtn}
                 </button>
               </div>
 
@@ -802,25 +852,190 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
               </div>
 
               <div className="flex flex-col gap-2">
-                <h3 className="text-lg font-black tracking-widest text-neon-glow glitch-text" data-text="MATCHMAKING ACTIVE">
-                  MATCHMAKING ACTIVE
+                <h3 className="text-lg font-black tracking-widest text-neon-glow glitch-text" data-text={matchmakingActive}>
+                  {matchmakingActive}
                 </h3>
                 <p className="font-mono text-xs text-neon-cyan uppercase animate-pulse">
-                  Searching for worthy opponent...
+                  {searchingOpponent}
                 </p>
               </div>
 
               <div className="w-full bg-dark-800 border border-zinc-800/80 p-3 rounded font-mono text-xs text-zinc-500 uppercase flex justify-between">
-                <span>QUEUE TIME: ACTIVE</span>
-                <span className="text-white">ELO RANGE: +/- 150</span>
+                <span>{queueTimeLabel}: ACTIVE</span>
+                <span className="text-white">{eloRangeLabel}: +/- 150</span>
               </div>
 
               <button
                 onClick={cancelMatchmaking}
                 className="bg-zinc-900 border border-zinc-800 hover:border-neon-red text-zinc-400 hover:text-white px-6 py-2 rounded text-xs font-mono tracking-widest uppercase transition-colors"
               >
-                CANCEL QUEUE
+                {cancelQueueBtn}
               </button>
+            </motion.div>
+          )}
+
+          {/* CUSTOM_MENU SCREEN */}
+          {screen === 'CUSTOM_MENU' && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
+            >
+              <h2 className="text-xl font-black text-white tracking-widest text-neon-glow flex justify-center items-center gap-2">
+                {t('custom_room', 'CUSTOM ROOM')}
+              </h2>
+              <div className="flex flex-col gap-4">
+                <button
+                  onClick={createCustomRoom}
+                  className="w-full bg-neon-red hover:bg-red-600 text-black font-black py-3 rounded tracking-widest font-display text-sm transition-all"
+                >
+                  {t('create_room', 'CREATE ROOM')}
+                </button>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={t("enter_room_code")}
+                    value={customCodeInput}
+                    onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase())}
+                    className="w-full bg-dark-900 border border-zinc-800 focus:border-neon-cyan rounded px-3 py-2 text-sm font-mono text-white tracking-widest outline-none transition-colors text-center"
+                  />
+                </div>
+                <button
+                  onClick={joinCustomRoom}
+                  className="w-full bg-transparent border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 font-black py-3 rounded tracking-widest font-display text-sm transition-all"
+                >
+                  {t('join_room', 'JOIN ROOM')}
+                </button>
+                <button
+                  onClick={leaveLobbyAndReset}
+                  className="text-xs text-zinc-500 font-mono tracking-widest hover:text-white transition-colors"
+                >
+                  {t('cancel', 'CANCEL')}
+                </button>
+                {customError && <div className="text-neon-red text-xs font-mono">{customError}</div>}
+              </div>
+            </motion.div>
+          )}
+
+          {/* CUSTOM_LOBBY SCREEN */}
+          {screen === 'CUSTOM_LOBBY' && customRoom && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
+            >
+              <h2 className="text-xl font-black text-white tracking-widest text-neon-glow flex justify-center items-center gap-2">
+                {t('custom_room', 'CUSTOM ROOM')}
+              </h2>
+              <div className="bg-black p-3 rounded border border-zinc-800 text-center mb-4">
+                <span className="text-zinc-500 text-xs font-mono">ROOM CODE: </span>
+                <span className="text-neon-cyan font-black tracking-widest">{customRoom.code}</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between items-center text-xs font-mono text-zinc-400">
+                  <span>P1: {customRoom.players[0]?.username || t("waiting")}</span>
+                  <span>P2: {customRoom.players[1]?.username || t("waiting")}</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-3 mt-4">
+                <button
+                  onClick={startCustomBattle}
+                  disabled={customRoom.players.length < 2 || customRoom.players[0]?.socketId !== socket.id}
+                  className="w-full bg-neon-red hover:bg-red-600 disabled:opacity-50 text-black font-black py-3 rounded tracking-widest font-display text-sm transition-all"
+                >
+                  {t('start_match', 'START MATCH')}
+                </button>
+                <button
+                  onClick={leaveLobbyAndReset}
+                  className="text-xs text-zinc-500 font-mono tracking-widest hover:text-white transition-colors"
+                >
+                  {t('cancel', 'CANCEL')}
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* TOURNAMENT_MENU SCREEN */}
+          {screen === 'TOURNAMENT_MENU' && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
+            >
+              <h2 className="text-xl font-black text-white tracking-widest text-yellow-400 flex justify-center items-center gap-2">
+                {t('tournament_room', 'TOURNAMENT')}
+              </h2>
+              <div className="flex flex-col gap-4">
+                <button
+                  onClick={createTournament}
+                  className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-black py-3 rounded tracking-widest font-display text-sm transition-all"
+                >
+                  {t('create_room', 'CREATE TOURNAMENT')}
+                </button>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={t("enter_tournament_code")}
+                    value={tCodeInput}
+                    onChange={(e) => setTCodeInput(e.target.value.toUpperCase())}
+                    className="w-full bg-dark-900 border border-zinc-800 focus:border-yellow-400 rounded px-3 py-2 text-sm font-mono text-white tracking-widest outline-none transition-colors text-center"
+                  />
+                </div>
+                <button
+                  onClick={joinTournament}
+                  className="w-full bg-transparent border border-yellow-400 text-yellow-400 hover:bg-yellow-400/10 font-black py-3 rounded tracking-widest font-display text-sm transition-all"
+                >
+                  {t('join_room', 'JOIN TOURNAMENT')}
+                </button>
+                <button
+                  onClick={leaveLobbyAndReset}
+                  className="text-xs text-zinc-500 font-mono tracking-widest hover:text-white transition-colors"
+                >
+                  {t('cancel', 'CANCEL')}
+                </button>
+                {tError && <div className="text-neon-red text-xs font-mono">{tError}</div>}
+              </div>
+            </motion.div>
+          )}
+
+          {/* TOURNAMENT_LOBBY SCREEN */}
+          {screen === 'TOURNAMENT_LOBBY' && tournament && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full max-w-md bg-dark-800/90 border-2 border-zinc-800 rounded-lg p-6 flex flex-col gap-6 shadow-2xl relative"
+            >
+              <h2 className="text-xl font-black text-white tracking-widest text-yellow-400 flex justify-center items-center gap-2">
+                {t('tournament_room', 'TOURNAMENT')}
+              </h2>
+              <div className="bg-black p-3 rounded border border-zinc-800 text-center mb-4">
+                <span className="text-zinc-500 text-xs font-mono">CODE: </span>
+                <span className="text-yellow-400 font-black tracking-widest">{tournament.code}</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="text-xs font-mono text-zinc-400">
+                  {t("players")}{tournament.players.length}
+                </div>
+              </div>
+              <div className="flex flex-col gap-3 mt-4">
+                <button
+                  onClick={startTournament}
+                  disabled={tournament.players.length < 2 || tournament.players[0]?.id !== socket.id}
+                  className="w-full bg-yellow-400 hover:bg-yellow-500 disabled:opacity-50 text-black font-black py-3 rounded tracking-widest font-display text-sm transition-all"
+                >
+                  {t('start_match', 'START TOURNAMENT')}
+                </button>
+                <button
+                  onClick={leaveLobbyAndReset}
+                  className="text-xs text-zinc-500 font-mono tracking-widest hover:text-white transition-colors"
+                >
+                  {t('cancel', 'CANCEL')}
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -831,7 +1046,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full max-w-4xl flex flex-col gap-4 relative"
+              className="w-full max-w-7xl flex flex-col gap-4 relative mx-auto"
             >
               {/* Battle HUD Header */}
               <div className="flex justify-between items-center bg-black/80 px-4 py-2 border border-zinc-800 rounded-lg backdrop-blur-sm font-mono text-xs">
@@ -860,7 +1075,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     playerName={username}
                   />
                   <div className="absolute top-3 right-3 bg-neon-red text-black text-[9px] font-black px-1.5 py-0.5 rounded tracking-widest">
-                    P1 (YOU)
+                    {t("p1_you")}
                   </div>
                 </div>
 
@@ -877,7 +1092,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     playerName={opponentInfo?.username}
                   />
                   <div className="absolute top-3 right-3 bg-neon-cyan text-black text-[9px] font-black px-1.5 py-0.5 rounded tracking-widest">
-                    P2 (OPPONENT)
+                    {t("p2_opponent")}
                   </div>
                 </div>
               </div>
@@ -892,10 +1107,10 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                   >
                     <CrosshairIcon className="w-12 h-12 text-neon-red animate-spin" />
                     <h3 className="font-display text-lg font-black tracking-widest uppercase text-neon-glow">
-                      ESTABLISHING PEER CHANNEL
+                      {t('establishing_peer', 'ESTABLISHING PEER CHANNEL')}
                     </h3>
                     <p className="font-mono text-xs text-zinc-500">
-                      Syncing cameras and initializing AI detector models...
+                      {t('syncing_cameras', 'Syncing cameras and initializing AI detector models...')}
                     </p>
                   </motion.div>
                 )}
@@ -909,7 +1124,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
                   >
                     <div className="bg-black/90 px-10 py-6 border-2 border-neon-red text-center rounded-lg shadow-[0_0_50px_rgba(255,0,60,0.5)] crt-flicker">
-                      <div className="text-[10px] font-mono text-zinc-500 tracking-widest mb-1">MOG BATTLE BEGINS IN</div>
+                      <div className="text-[10px] font-mono text-zinc-500 tracking-widest mb-1">{t('battle_begins_in', 'MOG BATTLE BEGINS IN')}</div>
                       <h4 className="text-6xl md:text-8xl font-black font-display text-neon-red text-neon-glow animate-pulse">
                         {countdownText}
                       </h4>
@@ -927,8 +1142,8 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                       />
                     </div>
                     <div className="flex justify-between w-full font-mono text-[10px] text-zinc-500 px-1 uppercase">
-                      <span>STRETCH THOSE MUSCLES</span>
-                      <span className="text-neon-red font-black animate-pulse">MOG TIME REMAINING: {fightTimer}S</span>
+                      <span>{t('stretch_muscles', 'STRETCH THOSE MUSCLES')}</span>
+                      <span className="text-neon-red font-black animate-pulse">{t('time_remaining', 'MOG TIME REMAINING:')} {fightTimer}S</span>
                     </div>
                   </div>
                 )}
@@ -940,10 +1155,10 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-3 rounded-lg border border-zinc-800 z-30"
                   >
                     <div className="text-3xl font-black font-display text-white animate-pulse tracking-widest">
-                      CALCULATING OUTCOME...
+                      {t("calculating_outcome")}
                     </div>
                     <p className="font-mono text-xs text-neon-cyan">
-                      Aggregating Canthal angles, facial contours, and detecting filters...
+                      {t("aggregating_data")}
                     </p>
                   </motion.div>
                 )}
@@ -969,21 +1184,21 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                 </div>
                 
                 {roleToSelf(battleResult, playerRole).socketId === battleResult.winner ? (
-                  <h2 className="text-3xl md:text-5xl font-black font-display text-neon-cyan text-neon-cyan tracking-widest glitch-text" data-text="YOU MOGGED!">
-                    YOU MOGGED!
+                  <h2 className="text-3xl md:text-5xl font-black font-display text-neon-cyan text-neon-cyan tracking-widest glitch-text" data-text={t("you_mogged")}>
+                    {t("you_mogged")}
                   </h2>
                 ) : battleResult.winner === null ? (
                   <h2 className="text-3xl md:text-5xl font-black font-display text-white tracking-widest">
-                    MUTUAL DRAW
+                    {t("mutual_draw")}
                   </h2>
                 ) : (
-                  <h2 className="text-3xl md:text-5xl font-black font-display text-neon-red text-neon-glow tracking-widest animate-shake" data-text="YOU GOT MOGGED">
-                    GOT MOGGED!
+                  <h2 className="text-3xl md:text-5xl font-black font-display text-neon-red text-neon-glow tracking-widest animate-shake" data-text={t("got_mogged")}>
+                    {t("got_mogged")}
                   </h2>
                 )}
                 
                 <p className="text-[10px] text-zinc-500 font-mono mt-1 uppercase tracking-widest">
-                  Match Resolution: {battleResult.reason}
+                  {t("match_resolution")}{battleResult.reason}
                 </p>
               </div>
 
@@ -991,81 +1206,81 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
               <div className="grid grid-cols-2 gap-4">
                 {/* Self card */}
                 <div className="bg-zinc-950 p-4 border border-zinc-800 rounded font-mono flex flex-col gap-3 shadow-inner">
-                  <div className="text-zinc-500 text-[10px] uppercase">P1 (YOU)</div>
+                  <div className="text-zinc-500 text-[10px] uppercase">{t("p1_you")}</div>
                   <div className="font-display font-black text-sm text-neon-cyan truncate">
                     {roleToSelf(battleResult, playerRole).username}
                   </div>
                   <div className="bg-zinc-900 p-2 rounded border border-zinc-800 text-center">
-                    <div className="text-[9px] text-zinc-500 uppercase">MOG SCORE</div>
+                    <div className="text-[9px] text-zinc-500 uppercase">{t("mog_score")}</div>
                     <div className="text-2xl font-black text-white">
                       {roleToSelf(battleResult, playerRole).score}
                     </div>
                   </div>
                   <div className="text-[9px] text-zinc-400 grid grid-cols-2 gap-x-2 gap-y-1 border-t border-zinc-900 pt-2">
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>TYPE:</span>
+                      <span>{t("type")}</span>
                       <span className="text-white font-bold truncate max-w-[65px]">
-                        {roleToSelf(battleResult, playerRole).combatType || 'MOGGER'}
+                        {roleToSelf(battleResult, playerRole).combatType ? t(roleToSelf(battleResult, playerRole).combatType, roleToSelf(battleResult, playerRole).combatType) : 'MOGGER'}
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>TILT:</span>
+                      <span>{t("tilt")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.canthalTilt >= 0 ? '+' : ''}
                         {roleToSelf(battleResult, playerRole).details?.canthalTilt}°
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>SYM:</span>
+                      <span>{t("sym")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.symmetry || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>JAW:</span>
+                      <span>{t("jaw")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.jawline || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>GAZE:</span>
+                      <span>{t("gaze")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.hunterGaze || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>MEW:</span>
+                      <span>{t("mew")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.mewing || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>BROW:</span>
+                      <span>{t("brow")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.browCompactness || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>MID:</span>
+                      <span>{t("mid")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.midfaceRatio || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>LIPS:</span>
+                      <span>{t("lips")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.lipRatio || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>3RDS:</span>
+                      <span>{t("thirds")}</span>
                       <span className="text-white font-bold">
                         {roleToSelf(battleResult, playerRole).details?.facialThirds || 0}%
                       </span>
                     </div>
                   </div>
                   <div className="flex justify-between text-[10px] border-t border-zinc-900 pt-1.5 font-bold">
-                    <span>ELO:</span>
+                    <span>{t("elo")}</span>
                     <span className={roleToSelf(battleResult, playerRole).eloChange >= 0 ? 'text-neon-cyan' : 'text-neon-red'}>
                       {roleToSelf(battleResult, playerRole).eloChange >= 0 ? '+' : ''}
                       {roleToSelf(battleResult, playerRole).eloChange}
@@ -1075,81 +1290,81 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
                 {/* Opponent card */}
                 <div className="bg-zinc-950 p-4 border border-zinc-800 rounded font-mono flex flex-col gap-3 shadow-inner">
-                  <div className="text-zinc-500 text-[10px] uppercase">P2 (OPPONENT)</div>
+                  <div className="text-zinc-500 text-[10px] uppercase">{t("p2_opponent")}</div>
                   <div className="font-display font-black text-sm text-zinc-300 truncate">
                     {roleToOpponent(battleResult, playerRole).username}
                   </div>
                   <div className="bg-zinc-900 p-2 rounded border border-zinc-800 text-center">
-                    <div className="text-[9px] text-zinc-500 uppercase">MOG SCORE</div>
+                    <div className="text-[9px] text-zinc-500 uppercase">{t("mog_score")}</div>
                     <div className="text-2xl font-black text-white">
                       {roleToOpponent(battleResult, playerRole).score}
                     </div>
                   </div>
                   <div className="text-[9px] text-zinc-400 grid grid-cols-2 gap-x-2 gap-y-1 border-t border-zinc-900 pt-2">
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>TYPE:</span>
+                      <span>{t("type")}</span>
                       <span className="text-white font-bold truncate max-w-[65px]">
-                        {roleToOpponent(battleResult, playerRole).combatType || 'MOGGER'}
+                        {roleToOpponent(battleResult, playerRole).combatType ? t(roleToOpponent(battleResult, playerRole).combatType, roleToOpponent(battleResult, playerRole).combatType) : 'MOGGER'}
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>TILT:</span>
+                      <span>{t("tilt")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.canthalTilt >= 0 ? '+' : ''}
                         {roleToOpponent(battleResult, playerRole).details?.canthalTilt}°
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>SYM:</span>
+                      <span>{t("sym")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.symmetry || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>JAW:</span>
+                      <span>{t("jaw")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.jawline || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>GAZE:</span>
+                      <span>{t("gaze")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.hunterGaze || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>MEW:</span>
+                      <span>{t("mew")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.mewing || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>BROW:</span>
+                      <span>{t("brow")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.browCompactness || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>MID:</span>
+                      <span>{t("mid")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.midfaceRatio || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>LIPS:</span>
+                      <span>{t("lips")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.lipRatio || 0}%
                       </span>
                     </div>
                     <div className="flex justify-between border-b border-zinc-900/50 pb-0.5">
-                      <span>3RDS:</span>
+                      <span>{t("thirds")}</span>
                       <span className="text-white font-bold">
                         {roleToOpponent(battleResult, playerRole).details?.facialThirds || 0}%
                       </span>
                     </div>
                   </div>
                   <div className="flex justify-between text-[10px] border-t border-zinc-900 pt-1.5 font-bold">
-                    <span>ELO:</span>
+                    <span>{t("elo")}</span>
                     <span className={roleToOpponent(battleResult, playerRole).eloChange >= 0 ? 'text-neon-cyan' : 'text-neon-red'}>
                       {roleToOpponent(battleResult, playerRole).eloChange >= 0 ? '+' : ''}
                       {roleToOpponent(battleResult, playerRole).eloChange}
@@ -1192,11 +1407,11 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
               <div className="flex justify-between items-center bg-black/80 px-4 py-2 border border-zinc-800 rounded-lg backdrop-blur-sm font-mono text-xs">
                 <div className="flex items-center gap-2">
                   <span className="text-zinc-500">MODE:</span>
-                  <span className="text-neon-cyan tracking-widest font-bold">SOLO PRACTICE ARENA</span>
+                  <span className="text-neon-cyan tracking-widest font-bold">{t('solo_practice_arena', 'SOLO PRACTICE ARENA')}</span>
                 </div>
                 <div className="bg-neon-cyan/10 border border-neon-cyan/30 px-3 py-1 rounded text-neon-cyan font-black flex items-center gap-1.5 animate-pulse">
                   <span className="w-1.5 h-1.5 rounded-full bg-neon-cyan" />
-                  REAL-TIME ASSESSMENT ACTIVE
+                  {t('real_time_assessment_active', 'REAL-TIME ASSESSMENT ACTIVE')}
                 </div>
               </div>
 
@@ -1214,7 +1429,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     playerName={username}
                   />
                   <div className="absolute top-3 right-3 bg-neon-cyan text-black text-[9px] font-black px-1.5 py-0.5 rounded tracking-widest">
-                    PRACTICE FEED
+                    {t('practice_feed', 'PRACTICE FEED')}
                   </div>
                 </div>
 
@@ -1226,21 +1441,21 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
                   <h3 className="font-display text-sm font-black text-white tracking-widest border-b border-zinc-800 pb-2 flex items-center gap-2">
                     <Terminal className="w-4 h-4 text-neon-cyan" />
-                    AI MOG COACH FEEDBACK
+                    {t("ai_mog_coach")}
                   </h3>
 
                   <div className="flex flex-col gap-3 font-mono text-xs text-zinc-300 flex-grow">
                     {localScores && localScores.finalScore > 0 ? (
                       <>
                         <div className="bg-black/40 p-3 border border-zinc-800/80 rounded flex flex-col gap-1">
-                          <span className="text-[10px] text-zinc-500 uppercase">Current Performance Tier:</span>
+                          <span className="text-[10px] text-zinc-500 uppercase">{t("current_performance_tier")}</span>
                           <span className="text-neon-cyan font-bold uppercase text-sm tracking-wider">
-                            {localCombatType || 'ANALYZING...'}
+                            {localCombatType ? t(localCombatType, localCombatType) : t('analyzing', 'ANALYZING...')}
                           </span>
                         </div>
 
                         <div className="flex flex-col gap-2">
-                          <span className="text-[10px] text-zinc-500 uppercase">Mog Coach Tips:</span>
+                          <span className="text-[10px] text-zinc-500 uppercase">{t("mog_coach_tips")}</span>
                           
                           {/* Symmetry Tip */}
                           {localScores.symmetry < 85 && (
@@ -1280,7 +1495,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center py-6">
                         <CrosshairIcon className="w-8 h-8 animate-spin text-neon-red" />
-                        <span className="tracking-widest text-[10px] text-zinc-400">CONNECTING VIDEO STREAM...</span>
+                        <span className="tracking-widest text-[10px] text-zinc-400">{t("connecting_video")}</span>
                       </div>
                     )}
                   </div>
@@ -1289,7 +1504,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
                     onClick={stopTraining}
                     className="w-full bg-zinc-900 border border-zinc-800 hover:border-neon-cyan text-zinc-400 hover:text-white py-2.5 rounded text-xs font-mono tracking-widest uppercase transition-colors"
                   >
-                    QUIT PRACTICE
+                    {t("quit_practice")}
                   </button>
                 </div>
               </div>

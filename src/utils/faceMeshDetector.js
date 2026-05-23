@@ -1,4 +1,5 @@
 // MediaPipe FaceMesh wrapper and Looksmaxxing Score Engine
+import { CONFIG } from '../config.js';
 
 class KalmanFilter {
   constructor(q = 0.001, r = 0.1) {
@@ -29,6 +30,10 @@ export class MogFaceDetector {
     this.loopTimeout = null;
     this.animationFrameId = null;
     this.consecutiveErrors = 0;
+    this.lastFrameTimestamp = null; // Timestamp of last processed frame
+    this.fps = 0;
+    this.frameCount = 0;
+    this.lastFpsUpdate = 0;
 
     this.scoreFilter = new KalmanFilter();
   }
@@ -90,8 +95,23 @@ export class MogFaceDetector {
   startCaptureLoop() {
     console.log("[MOG-AI] Starting custom frame capture loop...");
     
-    const processFrame = async () => {
+    const processFrame = async (timestamp) => {
       if (!this.active) return;
+
+      // FPS Calculation
+      this.frameCount++;
+      if (timestamp - this.lastFpsUpdate >= 1000) {
+        this.fps = Math.round((this.frameCount * 1000) / (timestamp - this.lastFpsUpdate));
+        this.lastFpsUpdate = timestamp;
+        this.frameCount = 0;
+      }
+
+      // Throttle to ~30fps (≈33 ms per frame)
+      if (this.lastFrameTimestamp && timestamp - this.lastFrameTimestamp < 33) {
+        this.animationFrameId = requestAnimationFrame(processFrame);
+        return;
+      }
+      this.lastFrameTimestamp = timestamp;
 
       if (this.video && this.video.readyState >= 2) {
         try {
@@ -111,13 +131,11 @@ export class MogFaceDetector {
         }
       }
 
-      this.loopTimeout = setTimeout(() => {
-        if (this.active && !this.isMocking) {
-          this.animationFrameId = requestAnimationFrame(processFrame);
-        }
-      }, 200);
+      // Schedule next frame
+      this.animationFrameId = requestAnimationFrame(processFrame);
     };
 
+    // Kick off the loop
     this.animationFrameId = requestAnimationFrame(processFrame);
   }
 
@@ -158,7 +176,7 @@ export class MogFaceDetector {
         fraudAlerts,
         isSimulated: true
       });
-    }, 200);
+    }, 33);
   }
 
   handleFaceMeshResults(results) {
@@ -178,7 +196,7 @@ export class MogFaceDetector {
           hunterGaze: 0, browCompactness: 0, midfaceRatio: 0, 
           lipRatio: 0, facialThirds: 0, finalScore: 0 
         },
-        combatType: "NO FACE DETECTED",
+        combatType: CONFIG.COMBAT_TYPES.NOT_FOUND,
         fraudAlerts: { disqualified: false },
         isSimulated: false
       });
@@ -186,9 +204,6 @@ export class MogFaceDetector {
     }
 
     const landmarks = results.multiFaceLandmarks[0];
-
-    // Draw mesh points and high-tech overlays
-    this.drawLandmarks(landmarks);
 
     // Calculate advanced metrics
     const symmetry = this.calcSymmetry(landmarks);
@@ -207,6 +222,9 @@ export class MogFaceDetector {
     );
     const combatType = this.determineCombatType(scores);
 
+    // Draw mesh points and high-tech overlays with metrics
+    this.drawLandmarks(landmarks, scores);
+
     const fraudAlerts = this.detectFraud(landmarks, results);
 
     this.onResults({
@@ -222,7 +240,7 @@ export class MogFaceDetector {
     return Math.hypot(p1.x - p2.x, p1.y - p2.y);
   }
 
-  drawLandmarks(landmarks) {
+  drawLandmarks(landmarks, scores = null) {
     const width = this.canvas.width;
     const height = this.canvas.height;
     
@@ -298,6 +316,63 @@ export class MogFaceDetector {
     this.ctx.moveTo(midpupil.x * width, midpupil.y * height);
     this.ctx.lineTo(mouthCenter.x * width, mouthCenter.y * height);
     this.ctx.stroke();
+
+    if (scores) {
+      this.ctx.font = "12px monospace";
+      this.ctx.fillStyle = "rgba(0, 240, 255, 0.9)";
+      this.ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+      this.ctx.shadowBlur = 3;
+
+      // FPS Text
+      this.ctx.fillStyle = "#ffffff";
+      this.ctx.fillText(`FPS: ${this.fps}`, 10, 20);
+
+      // Jawline Text
+      this.ctx.fillStyle = "rgba(0, 240, 255, 0.9)";
+      const jawRightLm = landmarks[397];
+      this.ctx.fillText(`ÇENE (JAWLINE): ${scores.jawline}%`, (jawRightLm.x * width) + 10, jawRightLm.y * height);
+
+      // Canthal Tilt Text
+      this.ctx.fillStyle = "#ff007f";
+      const rightEyeOuter = landmarks[263];
+      this.ctx.fillText(`GÖZ AÇISI (TILT): ${scores.canthalTilt.toFixed(1)}°`, (rightEyeOuter.x * width) + 15, rightEyeOuter.y * height);
+
+      // Midface Text
+      this.ctx.fillStyle = "rgba(0, 255, 100, 0.9)";
+      this.ctx.fillText(`ORTA YÜZ (MIDFACE): ${scores.midfaceRatio}%`, (mouthCenter.x * width) + 15, (midpupil.y + mouthCenter.y) * 0.5 * height);
+
+      // Hunter Gaze Text
+      this.ctx.fillStyle = "rgba(255, 230, 0, 0.9)";
+      const leftEyeOuter = landmarks[33];
+      this.ctx.fillText(`AVCI BAKIŞI: ${scores.hunterGaze}%`, (leftEyeOuter.x * width) - 130, leftEyeOuter.y * height);
+
+      // Brow Compactness
+      this.ctx.fillStyle = "rgba(255, 150, 0, 0.9)";
+      const leftBrowTop = landmarks[105];
+      this.ctx.fillText(`KAŞ YAKINLIĞI: ${scores.browCompactness}%`, (leftBrowTop.x * width) - 150, leftBrowTop.y * height - 15);
+
+      // Symmetry Text
+      this.ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      const noseLm = landmarks[1];
+      this.ctx.fillText(`SİMETRİ: ${scores.symmetry}%`, (noseLm.x * width) - 40, (noseLm.y * height) - 20);
+
+      // Mewing
+      this.ctx.fillStyle = "rgba(180, 0, 255, 0.9)";
+      const chinLm = landmarks[152];
+      this.ctx.fillText(`MEWING: ${scores.mewing}%`, (chinLm.x * width) - 40, (chinLm.y * height) + 20);
+
+      // Lip Ratio
+      this.ctx.fillStyle = "rgba(255, 100, 100, 0.9)";
+      const lipLeftLm = landmarks[61];
+      this.ctx.fillText(`DUDAK ORANI: ${scores.lipRatio}%`, (lipLeftLm.x * width) - 130, lipLeftLm.y * height);
+
+      // Facial Thirds
+      this.ctx.fillStyle = "rgba(100, 200, 255, 0.9)";
+      const foreheadLm = landmarks[10];
+      this.ctx.fillText(`YÜZ ORANLARI: ${scores.facialThirds}%`, (foreheadLm.x * width) - 60, (foreheadLm.y * height) - 15);
+      
+      this.ctx.shadowBlur = 0; // reset
+    }
   }
 
   drawMockLandmarks() {
@@ -312,7 +387,7 @@ export class MogFaceDetector {
 
     this.ctx.fillStyle = "rgba(255, 0, 60, 0.4)";
     this.ctx.font = "10px monospace";
-    this.ctx.fillText("AI ENGINE: RUNNING ADVANCED SIMULATION", 10, 20);
+    this.ctx.fillText("YAPAY ZEKA: GELİŞMİŞ SİMÜLASYON ÇALIŞIYOR", 10, 20);
 
     const centerX = width / 2;
     const centerY = height / 2;
@@ -472,16 +547,17 @@ export class MogFaceDetector {
   calculateFinalScore(symmetry, jawline, tilt, mewing, hunterGaze, browCompactness, midfaceRatio, lipRatio, facialThirds) {
     const tiltScore = Math.min(100, Math.max(20, Math.round(((tilt + 4) / 10) * 100)));
 
+    const w = CONFIG.WEIGHTS;
     const rawFinal = 
-      (symmetry * 0.15) + 
-      (jawline * 0.15) + 
-      (tiltScore * 0.15) + 
-      (mewing * 0.10) + 
-      (hunterGaze * 0.15) + 
-      (browCompactness * 0.10) + 
-      (midfaceRatio * 0.10) + 
-      (lipRatio * 0.05) + 
-      (facialThirds * 0.05);
+      (symmetry * w.SYMMETRY) + 
+      (jawline * w.JAWLINE) + 
+      (tiltScore * w.CANTHAL_TILT) + 
+      (mewing * w.MEWING) + 
+      (hunterGaze * w.HUNTER_GAZE) + 
+      (browCompactness * w.BROW_COMPACTNESS) + 
+      (midfaceRatio * w.MIDFACE_RATIO) + 
+      (lipRatio * w.LIP_RATIO) + 
+      (facialThirds * w.FACIAL_THIRDS);
 
     const smoothedFinal = this.scoreFilter.update(rawFinal);
 
@@ -502,13 +578,13 @@ export class MogFaceDetector {
   determineCombatType(scores) {
     const { symmetry, jawline, canthalTilt, hunterGaze, finalScore } = scores;
 
-    if (finalScore >= 92) return "NORDIC MOGGER";
-    if (jawline >= 85 && hunterGaze >= 88 && canthalTilt >= 2) return "PREDATOR TYPE";
-    if (finalScore >= 80 && symmetry >= 85) return "PRETTY BOY";
-    if (jawline >= 80) return "GYMCEL";
-    if (canthalTilt < 0) return "SLEEP DEPRIVED DEMON";
+    if (finalScore >= 92) return CONFIG.COMBAT_TYPES.SCANDINAVIAN;
+    if (jawline >= 85 && hunterGaze >= 88 && canthalTilt >= 2) return CONFIG.COMBAT_TYPES.PREDATOR;
+    if (finalScore >= 80 && symmetry >= 85) return CONFIG.COMBAT_TYPES.PRETTY_BOY;
+    if (jawline >= 80) return CONFIG.COMBAT_TYPES.GYMCEL;
+    if (canthalTilt < 0) return CONFIG.COMBAT_TYPES.SLEEPLESS_DEMON;
     
-    return "FINAL BOSS IN TRAINING";
+    return CONFIG.COMBAT_TYPES.FINAL_BOSS;
   }
 
   detectFraud(landmarks, results) {
