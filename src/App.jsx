@@ -150,6 +150,7 @@ export default function App() {
   const [roomId, setRoomId] = useState(null);
   const [playerRole, setPlayerRole] = useState(null); // 'player1' or 'player2'
   const [opponentInfo, setOpponentInfo] = useState(null);
+  const [debugMode, setDebugMode] = useState(false);
   const [peerState, setPeerState] = useState('new'); // connecting, connected, disconnected
 const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -499,7 +500,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
         localVideoElement,
         localCanvasElement,
         (results) => {
-          if (results.scores) {
+          if (results.scores && (window.DEBUG_MODE || debugMode)) {
             setLocalScores(results.scores);
             setLocalCombatType(results.combatType);
             setLocalFraud(results.fraudAlerts);
@@ -520,6 +521,10 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Sync Countdown Clock
   const runCountdown = () => {
+    // If debug mode, start performance logger
+    if (debugMode) {
+      console.log('[DEBUG] Countdown started');
+    }
     let tick = 3;
     setCountdownText('3');
     synth.playTick();
@@ -733,7 +738,7 @@ const [isSettingsOpen, setIsSettingsOpen] = useState(false);
         </div>
       </header>
       {/* Settings Modal */}
-      <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <Settings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} debugMode={debugMode} setDebugMode={setDebugMode} />
       
       {/* Primary Screens */}
       <main className="relative z-10 w-full flex-grow flex items-center justify-center py-6">

@@ -323,9 +323,11 @@ export class MogFaceDetector {
       this.ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
       this.ctx.shadowBlur = 3;
 
-      // FPS Text
-      this.ctx.fillStyle = "#ffffff";
-      this.ctx.fillText(`FPS: ${this.fps}`, 10, 20);
+      // FPS Text (debug only)
+      if (window.DEBUG_MODE) {
+        this.ctx.fillStyle = "#ffffff";
+        this.ctx.fillText(`FPS: ${this.fps}`, 10, 20);
+      }
 
       // Jawline Text
       this.ctx.fillStyle = "rgba(0, 240, 255, 0.9)";

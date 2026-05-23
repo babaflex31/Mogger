@@ -48,3 +48,5 @@ function TechnicalPanel({ scores, combatType }) {
     </div>
   );
 }
+
+export default TechnicalPanel;

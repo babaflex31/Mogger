@@ -229,3 +229,5 @@ function CameraStream({
     </div>
   );
 }
+
+export default CameraStream;

@@ -3,7 +3,7 @@ import { LanguageContext } from '../context/LanguageContext';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-export default function Settings({ isOpen, onClose }) {
+export default function Settings({ isOpen, onClose, debugMode, setDebugMode }) {
   const { t } = useTranslation();
   useEffect(() => {
     if (!isOpen) return;
@@ -34,6 +34,10 @@ export default function Settings({ isOpen, onClose }) {
           <option value="en">{t('english')}</option>
           <option value="tr">{t('turkish')}</option>
         </select>
+        <div className="mt-4 flex items-center">
+          <input type="checkbox" id="debugToggle" checked={debugMode} onChange={(e)=>{ setDebugMode(e.target.checked); window.DEBUG_MODE=e.target.checked; }} className="mr-2" />
+          <label htmlFor="debugToggle" className="text-sm text-zinc-300">{t('debug_mode')}</label>
+        </div>
         <button
           onClick={onClose}
           className="mt-4 w-full bg-neon-red/20 text-neon-red py-2 rounded hover:bg-neon-red/30"
